@@ -1,0 +1,12 @@
+{
+  "identifier": "bob-plugin-oald-dictionary",
+  "versions": [
+    {
+      "version": "1.0.10",
+      "desc": "更新内容见: https://github.com/ZhangEx18/bob-plugin-oald-dictionary/releases",
+      "sha256": "571198c874c0bd9bf242cadcc52cf6a5cc15063502cac8b7ea737495beedc08f",
+      "url": "https://cdn.jsdelivr.net/gh/ZhangEx18/bob-plugin-oald-dictionary@main/release/bob-plugin-oald-dictionary1.0.10.bobplugin",
+      "minBobVersion": "1.0.0"
+    }
+  ]
+}
