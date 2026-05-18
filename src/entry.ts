@@ -19,6 +19,7 @@ interface DictEntry {
   parent_relation?: WordRelation | null;
   child_relations?: WordRelation[];
   cross_references?: WordRelation[];
+  inflection_sources?: InflectionSource[];
 }
 
 interface ShardCache {
@@ -26,6 +27,11 @@ interface ShardCache {
 }
 
 interface WordRelation {
+  word: string;
+  label: string;
+}
+
+interface InflectionSource {
   word: string;
   label: string;
 }
@@ -285,7 +291,55 @@ function translate(query: Bob.TranslateQuery, completion: Bob.Completion) {
     phonetics.push({ type: "us", value: view.entry.phonetic_us });
   }
 
-  const parts = parseParts(view.entry.translation);
+  let parts = parseParts(view.entry.translation);
+
+  // Aggregate parts from inflection sources for homographic inflections like "leaves"
+  if (view.entry.inflection_sources && view.entry.inflection_sources.length > 0) {
+    const inflectionPosFilter: Record<string, string[]> = {
+      "第三人称单数": ["v"],
+      "过去式": ["v"],
+      "过去分词": ["v"],
+      "现在分词": ["v"],
+      "复数": ["n"],
+      "比较级": ["adj", "adv"],
+      "最高级": ["adj", "adv"],
+    };
+
+    for (const source of view.entry.inflection_sources) {
+      const sourceShard = getShardForWord(source.word);
+      if (!sourceShard) continue;
+
+      const sourceEntry = sourceShard[source.word.toLowerCase()];
+      if (!sourceEntry) continue;
+
+      const sourceParts = parseParts(sourceEntry.translation);
+
+      // Determine allowed POS keys from the source label
+      const allowedPos: string[] = [];
+      for (const labelPart of source.label.split(",")) {
+        const trimmed = labelPart.trim();
+        if (inflectionPosFilter[trimmed]) {
+          for (const pos of inflectionPosFilter[trimmed]) {
+            if (!allowedPos.includes(pos)) {
+              allowedPos.push(pos);
+            }
+          }
+        }
+      }
+
+      for (const sp of sourceParts) {
+        const posKey = sp.part.replace(".", "");
+        if (allowedPos.length > 0 && !allowedPos.includes(posKey)) {
+          continue;
+        }
+        parts.push({
+          part: sp.part,
+          means: sp.means.map((m) => `${m} (${source.word} 的 ${source.label})`),
+        });
+      }
+    }
+  }
+
   const exchanges = buildMorphologyExchanges(view);
 
   const additions: Bob.AddtionObject[] = [];
