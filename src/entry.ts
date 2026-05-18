@@ -38,14 +38,21 @@ interface EntryView {
   childRelations: WordRelation[];
 }
 
+interface MorphologyItem {
+  label: string;
+  word: string;
+}
+
 const shardCache: Map<string, ShardCache> = new Map();
 
 const exchangeLabelMap: Record<string, string> = {
   s: "复数",
   "3": "第三人称单数",
+  i: "现在分词",
   p: "过去式",
   d: "过去分词",
-  i: "现在分词",
+  c: "比较级",
+  sup: "最高级",
 };
 
 function loadShard(char: string): ShardCache | null {
@@ -110,7 +117,7 @@ function parseParts(translation: string): Bob.PartObject[] {
 function parseExchanges(exchange: string): Bob.ExchangeObject[] {
   const values = parseExchangeValues(exchange);
   const exchanges: Bob.ExchangeObject[] = [];
-  const order = ["s", "3", "i", "p", "d"];
+  const order = ["s", "3", "i", "p", "d", "c", "sup"];
 
   for (const key of order) {
     const label = exchangeLabelMap[key];
@@ -124,6 +131,67 @@ function parseExchanges(exchange: string): Bob.ExchangeObject[] {
   }
 
   return exchanges;
+}
+
+function normalizeMorphologyWord(word: string): string {
+  return word.toLowerCase();
+}
+
+function pickPrimaryMorphologyWord(words: string[]): string[] {
+  const preferredPairs: Array<[string, string]> = [
+    ["travelled", "traveled"],
+    ["travelling", "traveling"],
+  ];
+  const normalizedWords = new Set(words.map(normalizeMorphologyWord));
+  const hiddenWords = new Set<string>();
+
+  for (const [secondary, primary] of preferredPairs) {
+    if (!normalizedWords.has(secondary) || !normalizedWords.has(primary)) continue;
+    hiddenWords.add(secondary);
+  }
+
+  return words.filter((word) => !hiddenWords.has(normalizeMorphologyWord(word)));
+}
+
+function buildMorphologyExchanges(view: EntryView): Bob.ExchangeObject[] {
+  if (view.isFallbackDisplay) {
+    return view.backRelation
+      ? [{ name: view.backRelation.label, words: [view.backRelation.word] }]
+      : [];
+  }
+
+  const morphologyByLabel = new Map<string, MorphologyItem[]>();
+  const seenMorphologyKeys = new Set<string>();
+
+  for (const exchange of parseExchanges(view.entry.exchange)) {
+    for (const word of exchange.words) {
+      const key = `${exchange.name}:${normalizeMorphologyWord(word)}`;
+      if (seenMorphologyKeys.has(key)) continue;
+      seenMorphologyKeys.add(key);
+      const items = morphologyByLabel.get(exchange.name) || [];
+      morphologyByLabel.set(exchange.name, [...items, { label: exchange.name, word }]);
+    }
+  }
+
+  for (const relation of view.childRelations) {
+    const key = `${relation.label}:${normalizeMorphologyWord(relation.word)}`;
+    if (seenMorphologyKeys.has(key)) continue;
+    seenMorphologyKeys.add(key);
+    const items = morphologyByLabel.get(relation.label) || [];
+    morphologyByLabel.set(relation.label, [...items, { label: relation.label, word: relation.word }]);
+  }
+
+  const orderedLabels = ["复数", "第三人称单数", "现在分词", "过去式", "过去分词", "比较级", "最高级"];
+
+  return orderedLabels.flatMap((label) => {
+    const items = morphologyByLabel.get(label) || [];
+    if (items.length === 0) return [];
+
+    const words = pickPrimaryMorphologyWord(items.map((item) => item.word));
+    if (words.length === 0) return [];
+
+    return [{ name: label, words }];
+  });
 }
 
 function getShardForWord(word: string): ShardCache | null {
@@ -186,30 +254,7 @@ function translate(query: Bob.TranslateQuery, completion: Bob.Completion) {
   }
 
   const parts = parseParts(view.entry.translation);
-
-  const exchanges = view.isFallbackDisplay ? [] : parseExchanges(view.entry.exchange);
-  const seenExchangeKeys = new Set(exchanges.map((item) => `${item.name}:${item.words.join("|")}`));
-
-  if (view.backRelation) {
-    const key = `${view.backRelation.label}:${view.backRelation.word}`;
-    if (!seenExchangeKeys.has(key)) {
-      exchanges.push({
-        name: view.backRelation.label,
-        words: [view.backRelation.word],
-      });
-      seenExchangeKeys.add(key);
-    }
-  }
-
-  for (const relation of view.childRelations) {
-    const key = `${relation.label}:${relation.word}`;
-    if (seenExchangeKeys.has(key)) continue;
-    exchanges.push({
-      name: relation.label,
-      words: [relation.word],
-    });
-    seenExchangeKeys.add(key);
-  }
+  const exchanges = buildMorphologyExchanges(view);
 
   const additions: Bob.AddtionObject[] = [];
 

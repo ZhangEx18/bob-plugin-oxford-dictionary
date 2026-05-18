@@ -44,9 +44,13 @@ EXCHANGE_DISPLAY_LABELS = {
     "d": "过去分词",
     "i": "现在分词",
     "s": "复数",
+    "c": "比较级",
+    "sup": "最高级",
 }
 
-EXCHANGE_DISPLAY_ORDER = ["3", "p", "d", "i", "s"]
+EXCHANGE_DISPLAY_ORDER = ["3", "p", "d", "i", "s", "c", "sup"]
+IRREGULAR_COMPARATIVE_FORMS = {"more", "less", "better", "worse", "farther", "further"}
+IRREGULAR_SUPERLATIVE_FORMS = {"most", "least", "best", "worst", "farthest", "furthest"}
 
 
 def normalize_display_text(text: str) -> str:
@@ -148,6 +152,19 @@ def extract_exchange(soup: BeautifulSoup) -> str:
     return "/".join(parts)
 
 
+def normalize_exchange_forms(value: str) -> list[str]:
+    stripped = value.strip()
+    while stripped.startswith(("(", "（")):
+        stripped = re.sub(r"^[（(][^）)]*[）)]\s*", "", stripped)
+
+    forms: list[str] = []
+    for part in stripped.split(","):
+        normalized = normalize_display_text(part)
+        if normalized and normalized not in forms:
+            forms.append(normalized)
+    return forms
+
+
 def parse_exchange_values(exchange: str) -> dict[str, list[str]]:
     values: dict[str, list[str]] = {}
     if not exchange:
@@ -160,10 +177,67 @@ def parse_exchange_values(exchange: str) -> dict[str, list[str]]:
         if not key or not value:
             continue
         values.setdefault(key, [])
-        if value not in values[key]:
-            values[key].append(value)
+        for form in normalize_exchange_forms(value):
+            if form not in values[key]:
+                values[key].append(form)
 
     return values
+
+
+def move_surface_comparatives_into_exchange_slots(exchange_values: dict[str, list[str]], pos_summary: str) -> dict[str, list[str]]:
+    s_forms = exchange_values.get("s", [])
+    if not s_forms:
+        return exchange_values
+
+    pos_keys = parse_pos_keys(pos_summary)
+    has_comparative_pos = "adj" in pos_keys or "adv" in pos_keys
+
+    comparative_forms: list[str] = []
+    superlative_forms: list[str] = []
+    remaining_s_forms: list[str] = []
+
+    for form in s_forms:
+        lower_form = form.lower()
+        if lower_form in IRREGULAR_COMPARATIVE_FORMS:
+            comparative_forms.append(form)
+            continue
+        if lower_form in IRREGULAR_SUPERLATIVE_FORMS:
+            superlative_forms.append(form)
+            continue
+        if " " in form and lower_form not in IRREGULAR_COMPARATIVE_FORMS:
+            remaining_s_forms.append(form)
+            continue
+        if has_comparative_pos and lower_form.endswith("er"):
+            comparative_forms.append(form)
+            continue
+        if has_comparative_pos and lower_form.endswith("est"):
+            superlative_forms.append(form)
+            continue
+        remaining_s_forms.append(form)
+
+    if not comparative_forms and not superlative_forms:
+        return exchange_values
+
+    next_values = {key: [*values] for key, values in exchange_values.items()}
+
+    if remaining_s_forms:
+        next_values["s"] = remaining_s_forms
+    else:
+        next_values.pop("s", None)
+
+    if comparative_forms:
+        next_values["c"] = [
+            *next_values.get("c", []),
+            *[form for form in comparative_forms if form not in next_values.get("c", [])],
+        ]
+
+    if superlative_forms:
+        next_values["sup"] = [
+            *next_values.get("sup", []),
+            *[form for form in superlative_forms if form not in next_values.get("sup", [])],
+        ]
+
+    return next_values
 
 
 def has_standalone_entry(word: str, lookup: dict[str, str]) -> bool:
@@ -187,8 +261,54 @@ def parse_pos_keys(pos_summary: str) -> set[str]:
     return keys
 
 
-def supports_plural_relations(entry: dict[str, Any]) -> bool:
-    return "n" in parse_pos_keys(entry.get("pos", ""))
+def classify_surface_s_relations(entry: dict[str, Any]) -> tuple[bool, set[str]]:
+    pos_keys = parse_pos_keys(entry.get("pos", ""))
+    exchange_values = parse_exchange_values(entry.get("exchange", ""))
+    s_forms = exchange_values.get("s", [])
+    third_person_forms = set(exchange_values.get("3", []))
+
+    if "n" not in pos_keys:
+        return False, {form.lower() for form in s_forms}
+
+    has_comparative_pos = "adj" in pos_keys or "adv" in pos_keys
+    blocked_forms = {
+        form.lower()
+        for form in s_forms
+        if (
+            form not in third_person_forms
+            and (
+                (form.endswith(("er", "est")) and has_comparative_pos)
+                or form.lower() in IRREGULAR_COMPARATIVE_FORMS
+            )
+        )
+    }
+    allow_relation = any(form.lower() not in blocked_forms for form in s_forms)
+    return allow_relation, blocked_forms
+
+
+def classify_inflection_parent(entry: dict[str, Any], form_key: str) -> str | None:
+    pos_keys = parse_pos_keys(entry.get("pos", ""))
+    if not pos_keys:
+        return None
+
+    if form_key == "s":
+        if "n" in pos_keys:
+            return "复数"
+        if "v" in pos_keys:
+            return "第三人称单数"
+        return None
+
+    label = EXCHANGE_DISPLAY_LABELS.get(form_key)
+    if not label:
+        return None
+
+    if form_key in {"3", "p", "d", "i"}:
+        return label if "v" in pos_keys else None
+
+    if form_key in {"c", "sup"}:
+        return label if "adj" in pos_keys or "adv" in pos_keys else None
+
+    return None
 
 
 def apply_relation_metadata(entry: dict[str, Any], *, entry_kind: str, display_word: str,
@@ -204,15 +324,49 @@ def apply_relation_metadata(entry: dict[str, Any], *, entry_kind: str, display_w
     return next_entry
 
 
-def find_standalone_plural_parent(word: str, lookup: dict[str, str]) -> str | None:
+def find_standalone_plural_parent(word: str, finalized_entries: dict[str, dict[str, Any]]) -> str | None:
     if not word.endswith("s") or word.endswith("ss"):
         return None
 
     candidate = word[:-1]
-    if has_standalone_entry(candidate, lookup):
-        return candidate
+    candidate_entry = finalized_entries.get(candidate)
+    if not candidate_entry:
+        return None
 
-    return None
+    if candidate_entry.get("entry_kind") != "standalone":
+        return None
+
+    if "n" not in parse_pos_keys(candidate_entry.get("pos", "")):
+        return None
+
+    return candidate
+
+
+def should_preserve_alias_surface(word: str, target_entry: dict[str, Any],
+                                 parent_relation: dict[str, str] | None) -> bool:
+    if parent_relation:
+        return False
+
+    target_word = target_entry.get("word", "").lower()
+    if not target_word or word != f"{target_word}s":
+        return False
+
+    pos_keys = parse_pos_keys(target_entry.get("pos", ""))
+    return "n" not in pos_keys and "v" not in pos_keys
+
+
+def create_inflection_entry(form: str, parent_entry: dict[str, Any]) -> dict[str, Any]:
+    return apply_relation_metadata(
+        {
+            **parent_entry,
+            "word": form,
+            "linked_word": parent_entry["word"],
+        },
+        entry_kind="inflection",
+        display_word=parent_entry["word"],
+        parent_relation=build_relation(parent_entry["word"], "原形"),
+        child_relations=[],
+    )
 
 
 def extract_phrasal_verbs(soup: BeautifulSoup, lookup: dict[str, str]) -> list[dict]:
@@ -232,22 +386,24 @@ def extract_phrasal_verbs(soup: BeautifulSoup, lookup: dict[str, str]) -> list[d
     return pvs
 
 
+def serialize_exchange_values(values: dict[str, list[str]]) -> str:
+    parts: list[str] = []
+    for key in EXCHANGE_DISPLAY_ORDER:
+        for value in values.get(key, []):
+            parts.append(f"{key}:{value}")
+    return "/".join(parts)
+
+
 def build_exchange_lines(exchange: str) -> list[str]:
     if not exchange:
         return []
-    values = {}
-    for item in exchange.split("/"):
-        if ":" not in item:
-            continue
-        key, value = item.split(":", 1)
-        if key and value:
-            values[key] = value
+    values = parse_exchange_values(exchange)
     parts = []
     for key in EXCHANGE_DISPLAY_ORDER:
-        value = values.get(key)
+        words = values.get(key, [])
         label = EXCHANGE_DISPLAY_LABELS.get(key)
-        if value and label:
-            parts.append(f"{label}：{value}")
+        if words and label:
+            parts.append(f"{label}：{', '.join(words)}")
     return parts
 
 
@@ -281,9 +437,10 @@ def parse_entry(html: str, word: str, lookup: dict[str, str] = {}) -> dict | Non
     if not cn_data:
         return None
 
-    exchange = extract_exchange(soup)
-    translation = build_translation(cn_data)
     pos = build_pos_freq(cn_data)
+    exchange_values = move_surface_comparatives_into_exchange_slots(parse_exchange_values(extract_exchange(soup)), pos)
+    exchange = serialize_exchange_values(exchange_values)
+    translation = build_translation(cn_data)
     phrasal_verbs = extract_phrasal_verbs(soup, lookup)
 
     return {
@@ -380,24 +537,29 @@ def main():
     print("Phase 2: Building relation metadata...")
     child_relations_map: dict[str, list[dict[str, str]]] = {}
     parent_relations_map: dict[str, dict[str, str]] = {}
+    blocked_surface_forms_by_base: dict[str, set[str]] = {}
 
     for entry in standalone_cache.values():
         base_word = entry["word"].lower()
         exchange_values = parse_exchange_values(entry.get("exchange", ""))
-        allow_plural_relations = supports_plural_relations(entry)
+        allow_plural_relations, blocked_forms = classify_surface_s_relations(entry)
+        if blocked_forms:
+            blocked_surface_forms_by_base[base_word] = blocked_forms
         for key in EXCHANGE_DISPLAY_ORDER:
-            label = EXCHANGE_DISPLAY_LABELS.get(key)
+            label = classify_inflection_parent(entry, key)
             if key == "s" and not allow_plural_relations:
                 continue
             for form in exchange_values.get(key, []):
                 form_key = form.lower()
+                if form_key in blocked_forms:
+                    continue
                 if not label or form_key == base_word:
                     continue
                 child_relations_map.setdefault(base_word, [])
                 relation = build_relation(form, label)
                 if relation not in child_relations_map[base_word]:
                     child_relations_map[base_word].append(relation)
-                if form_key not in parent_relations_map:
+                if entry.get("pos") and form_key not in parent_relations_map:
                     parent_relations_map[form_key] = build_relation(entry["word"], "原形")
 
     finalized_entries: dict[str, dict[str, Any]] = {}
@@ -427,13 +589,16 @@ def main():
 
         parent_relation = parent_relations_map.get(word_key)
         display_word = target_entry["word"]
+        source_entry = target_entry
+        target_blocked_forms = blocked_surface_forms_by_base.get(target_key, set())
         if not parent_relation:
-            plural_parent = find_standalone_plural_parent(word_key, lookup)
+            plural_parent = find_standalone_plural_parent(word_key, finalized_entries)
             if plural_parent:
                 parent_entry = finalized_entries.get(plural_parent)
                 if parent_entry:
                     parent_relation = build_relation(parent_entry["word"], "原形")
                     display_word = parent_entry["word"]
+                    source_entry = parent_entry
                     child_relations_map.setdefault(plural_parent, [])
                     relation = build_relation(word, "复数")
                     if relation not in child_relations_map[plural_parent]:
@@ -442,10 +607,16 @@ def main():
         elif has_standalone_entry(parent_relation["word"], lookup):
             display_word = parent_relation["word"]
 
+        if word_key in target_blocked_forms:
+            display_word = word
+            parent_relation = None
+        elif should_preserve_alias_surface(word_key, target_entry, parent_relation):
+            display_word = word
+
         entry_kind = "inflection" if parent_relation else "alias"
         data = apply_relation_metadata(
             {
-                **target_entry,
+                **source_entry,
                 "word": word,
                 "linked_word": target_entry["word"],
             },
@@ -460,6 +631,22 @@ def main():
             print(f"  Links processed: {link_processed}")
 
     print(f"Phase 3 complete: {link_processed} links, {link_skipped} skipped")
+
+    print("Phase 4: Materializing missing inflection entries...")
+    materialized = 0
+    for word_key, entry in list(finalized_entries.items()):
+        if entry.get("entry_kind") != "standalone":
+            continue
+
+        for relation in entry.get("child_relations", []):
+            form = relation["word"]
+            form_key = form.lower()
+            if form_key in finalized_entries:
+                continue
+            finalized_entries[form_key] = create_inflection_entry(form, entry)
+            materialized += 1
+
+    print(f"Phase 4 complete: {materialized} entries materialized")
 
     print("Preparing shards...")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
