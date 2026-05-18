@@ -37,19 +37,19 @@ const sameSurfaceNvSamples = ['ally', 'bath', 'belly', 'bivvy', 'bully', 'bus', 
 const distinctSurfaceNvSamples = [
   { word: 'court-martial', thirdForms: [{ form: 'court-martials', displayWord: 'court-martial', parentWord: 'court-martial' }], pluralForms: [{ form: 'courts martial', displayWord: 'court-martial', parentWord: 'court-martial' }] },
   { word: 'crow', thirdForms: [{ form: 'crows', displayWord: 'crow', parentWord: 'crow' }], pluralForms: [{ form: 'Crows', displayWord: 'crow', parentWord: 'crow' }] },
-  { word: 'die', thirdForms: [{ form: 'dies', displayWord: 'die', parentWord: 'die' }], pluralForms: [{ form: 'dice', displayWord: 'dice', parentWord: null }] },
+  { word: 'die', thirdForms: [{ form: 'dies', displayWord: 'die', parentWord: 'die' }], pluralForms: [{ form: 'dice', displayWord: 'dice', parentWord: 'die' }] },
   { word: 'do', thirdForms: [{ form: 'does', displayWord: 'does', parentWord: null }], pluralForms: [{ form: 'dos', displayWord: 'do', parentWord: 'do' }, { form: 'do’s', displayWord: 'do', parentWord: 'do' }] },
   { word: 'focus', thirdForms: [{ form: 'focusses', displayWord: 'focus', parentWord: 'focus' }], pluralForms: [{ form: 'foci', displayWord: 'focus', parentWord: 'focus' }] },
-  { word: 'goose', thirdForms: [{ form: 'gooses', displayWord: 'goose', parentWord: 'goose' }], pluralForms: [{ form: 'geese', displayWord: 'geese', parentWord: null }] },
+  { word: 'goose', thirdForms: [{ form: 'gooses', displayWord: 'goose', parentWord: 'goose' }], pluralForms: [{ form: 'geese', displayWord: 'geese', parentWord: 'goose' }] },
   { word: 'hang', thirdForms: [{ form: 'hangs', displayWord: 'hang', parentWord: 'hang' }], pluralForms: [{ form: 'hanged', displayWord: 'hang', parentWord: 'hang' }] },
   { word: 'jackknife', thirdForms: [{ form: 'jackknifes', displayWord: 'jackknife', parentWord: 'jackknife' }], pluralForms: [{ form: 'jackknives', displayWord: 'jackknife', parentWord: 'jackknife' }] },
-  { word: 'knife', thirdForms: [{ form: 'knifes', displayWord: 'knife', parentWord: 'knife' }], pluralForms: [{ form: 'knives', displayWord: 'knives', parentWord: null }] },
+  { word: 'knife', thirdForms: [{ form: 'knifes', displayWord: 'knife', parentWord: 'knife' }], pluralForms: [{ form: 'knives', displayWord: 'knives', parentWord: 'knife' }] },
   { word: 'last', thirdForms: [{ form: 'lasts', displayWord: 'last', parentWord: 'last' }], pluralForms: [{ form: 'the last', displayWord: 'last', parentWord: 'last' }] },
-  { word: 'loaf', thirdForms: [{ form: 'loafs', displayWord: 'loaf', parentWord: 'loaf' }], pluralForms: [{ form: 'loaves', displayWord: 'loaves', parentWord: null }] },
-  { word: 'man', thirdForms: [{ form: 'mans', displayWord: 'man', parentWord: 'man' }], pluralForms: [{ form: 'men', displayWord: 'men', parentWord: null }] },
+  { word: 'loaf', thirdForms: [{ form: 'loafs', displayWord: 'loaf', parentWord: 'loaf' }], pluralForms: [{ form: 'loaves', displayWord: 'loaves', parentWord: 'loaf' }] },
+  { word: 'man', thirdForms: [{ form: 'mans', displayWord: 'man', parentWord: 'man' }], pluralForms: [{ form: 'men', displayWord: 'men', parentWord: 'man' }] },
   { word: 'staff', thirdForms: [{ form: 'staffs', displayWord: 'staff', parentWord: 'staff' }], pluralForms: [{ form: 'staves', displayWord: 'staff', parentWord: 'staff' }] },
   { word: 'tango', thirdForms: [{ form: 'tangoes', displayWord: 'tango', parentWord: 'tango' }], pluralForms: [{ form: 'tangos', displayWord: 'tango', parentWord: 'tango' }] },
-  { word: 'wolf', thirdForms: [{ form: 'wolfs', displayWord: 'wolf', parentWord: 'wolf' }], pluralForms: [{ form: 'wolves', displayWord: 'wolves', parentWord: null }] },
+  { word: 'wolf', thirdForms: [{ form: 'wolfs', displayWord: 'wolf', parentWord: 'wolf' }], pluralForms: [{ form: 'wolves', displayWord: 'wolves', parentWord: 'wolf' }] },
 ]
 const mixedPosComparativeLeakSamples = ['base', 'black', 'blind', 'brief', 'brown', 'calm', 'chill', 'dry', 'fancy', 'gross', 'tidy']
 const irregularComparativeLeakSamples = [
@@ -153,7 +153,7 @@ test('take family keeps standalone irregular forms on their own entries', () => 
   assert.deepEqual(tDict.taken.parent_relation, { word: 'take', label: '原形' })
 
   assert.equal(tDict.took.display_word, 'took')
-  assert.equal(tDict.took.parent_relation, null)
+  assert.deepEqual(tDict.took.parent_relation, { word: 'take', label: '原形' })
 })
 
 test('man family does not override standalone plural entries', () => {
@@ -162,7 +162,7 @@ test('man family does not override standalone plural entries', () => {
   assert.ok(relationWords(mDict.man.child_relations).includes('复数:men'))
 
   assert.equal(mDict.men.display_word, 'men')
-  assert.equal(mDict.men.parent_relation, null)
+  assert.deepEqual(mDict.men.parent_relation, { word: 'man', label: '原形' })
 })
 
 test('comparative adjective families participate in morphology navigation', () => {
@@ -195,6 +195,43 @@ test('comparative adjective families participate in morphology navigation', () =
   assert.equal(tDict.tackiest.display_word, 'tacky')
   assert.deepEqual(tDict.tackiest.parent_relation, { word: 'tacky', label: '原形' })
   assert.deepEqual(relationWords(tDict.tackiest.child_relations), [])
+})
+
+test('standalone suppletive forms link back to base and forward to subsequent forms', () => {
+  const bDict = loadShard('b')
+  const wDict = loadShard('w')
+  const gDict = loadShard('g')
+  const lDict = loadShard('l')
+  const fDict = loadShard('f')
+
+  // worse (standalone comparative of bad)
+  assert.equal(wDict.worse.entry_kind, 'standalone')
+  assert.deepEqual(wDict.worse.parent_relation, { word: 'bad', label: '原形' })
+  assert.ok(relationWords(wDict.worse.child_relations).includes('最高级:worst'), `worse should link forward to worst, got: ${relationWords(wDict.worse.child_relations)}`)
+  assert.ok(relationWords(wDict.worse.child_relations).includes('最高级:baddest'), `worse should link forward to baddest, got: ${relationWords(wDict.worse.child_relations)}`)
+
+  // better (standalone comparative of good)
+  assert.equal(bDict.better.entry_kind, 'standalone')
+  assert.deepEqual(bDict.better.parent_relation, { word: 'good', label: '原形' })
+  assert.ok(relationWords(bDict.better.child_relations).includes('最高级:best'), `better should link forward to best, got: ${relationWords(bDict.better.child_relations)}`)
+
+  // best (standalone superlative of good)
+  assert.equal(bDict.best.entry_kind, 'standalone')
+  assert.deepEqual(bDict.best.parent_relation, { word: 'good', label: '原形' })
+
+  // was (standalone past of be)
+  assert.equal(wDict.was.entry_kind, 'standalone')
+  assert.deepEqual(wDict.was.parent_relation, { word: 'be', label: '原形' })
+  assert.ok(relationWords(wDict.was.child_relations).includes('过去分词:been'), `was should link forward to been, got: ${relationWords(wDict.was.child_relations)}`)
+  assert.ok(relationWords(wDict.was.child_relations).includes('现在分词:being'), `was should link forward to being, got: ${relationWords(wDict.was.child_relations)}`)
+
+  // least (standalone superlative of little)
+  assert.equal(lDict.least.entry_kind, 'standalone')
+  assert.deepEqual(lDict.least.parent_relation, { word: 'little', label: '原形' })
+
+  // furthest (standalone superlative of far)
+  assert.equal(fDict.furthest.entry_kind, 'standalone')
+  assert.deepEqual(fDict.furthest.parent_relation, { word: 'far', label: '原形' })
 })
 
 test('standalone non-comparative aliases do not gain synthetic morphology navigation', () => {
@@ -382,7 +419,11 @@ test('batch morphology coverage spans 100+ words across relation categories', ()
 
   for (const [word, entry] of Object.entries(allEntries)) {
     if (!entry.pos && entry.parent_relation) {
-      assert.fail(`empty pos still has parent relation: ${word}`)
+      // Allow parent relations for suppletive forms whose base word has valid POS
+      const baseEntry = entryFor(entry.parent_relation.word)
+      if (!baseEntry?.pos) {
+        assert.fail(`empty pos still has parent relation: ${word}`)
+      }
     }
 
     const keys = posKeys(entry)

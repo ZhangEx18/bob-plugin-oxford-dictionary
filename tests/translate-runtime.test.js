@@ -108,6 +108,25 @@ test('comparative variants stay queryable while base entries expose comparative 
   assert.deepEqual([...exchangeMap.get('最高级')], ['happiest'])
 })
 
+test('standalone suppletive forms render back-relations and forward links at runtime', async () => {
+  const worse = await runTranslate('worse')
+  const better = await runTranslate('better')
+  const was = await runTranslate('was')
+
+  const worseMap = new Map(worse.toDict.exchanges.map((item) => [item.name, item.words]))
+  assert.deepEqual(JSON.parse(JSON.stringify(worseMap.get('原形'))), ['bad'])
+  assert.ok((worseMap.get('最高级') || []).includes('worst'), `worse should show worst as superlative, got: ${JSON.stringify(worse.toDict.exchanges)}`)
+
+  const betterMap = new Map(better.toDict.exchanges.map((item) => [item.name, item.words]))
+  assert.deepEqual(JSON.parse(JSON.stringify(betterMap.get('原形'))), ['good'])
+  assert.ok((betterMap.get('最高级') || []).includes('best'), `better should show best as superlative, got: ${JSON.stringify(better.toDict.exchanges)}`)
+
+  const wasMap = new Map(was.toDict.exchanges.map((item) => [item.name, item.words]))
+  assert.deepEqual(JSON.parse(JSON.stringify(wasMap.get('原形'))), ['be'])
+  assert.ok((wasMap.get('过去分词') || []).includes('been'), `was should show been as past participle, got: ${JSON.stringify(was.toDict.exchanges)}`)
+  assert.ok((wasMap.get('现在分词') || []).includes('being'), `was should show being as present participle, got: ${JSON.stringify(was.toDict.exchanges)}`)
+})
+
 test('comparative forms render under comparative and superlative exchanges at runtime', async () => {
   const cases = [
     { word: 'good', comparativeForms: ['better'], superlativeForms: ['best'] },

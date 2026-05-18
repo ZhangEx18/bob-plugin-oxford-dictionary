@@ -163,6 +163,15 @@ function buildMorphologyExchanges(view: EntryView): Bob.ExchangeObject[] {
   const morphologyByLabel = new Map<string, MorphologyItem[]>();
   const seenMorphologyKeys = new Set<string>();
 
+  if (view.backRelation) {
+    const key = `${view.backRelation.label}:${normalizeMorphologyWord(view.backRelation.word)}`;
+    if (!seenMorphologyKeys.has(key)) {
+      seenMorphologyKeys.add(key);
+      const items = morphologyByLabel.get(view.backRelation.label) || [];
+      morphologyByLabel.set(view.backRelation.label, [...items, { label: view.backRelation.label, word: view.backRelation.word }]);
+    }
+  }
+
   for (const exchange of parseExchanges(view.entry.exchange)) {
     for (const word of exchange.words) {
       const key = `${exchange.name}:${normalizeMorphologyWord(word)}`;
@@ -181,7 +190,7 @@ function buildMorphologyExchanges(view: EntryView): Bob.ExchangeObject[] {
     morphologyByLabel.set(relation.label, [...items, { label: relation.label, word: relation.word }]);
   }
 
-  const orderedLabels = ["复数", "第三人称单数", "现在分词", "过去式", "过去分词", "比较级", "最高级"];
+  const orderedLabels = ["原形", "复数", "第三人称单数", "现在分词", "过去式", "过去分词", "比较级", "最高级"];
 
   return orderedLabels.flatMap((label) => {
     const items = morphologyByLabel.get(label) || [];
