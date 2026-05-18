@@ -43,13 +43,13 @@ const distinctSurfaceNvSamples = [
   { word: 'goose', thirdForms: [{ form: 'gooses', displayWord: 'goose', parentWord: 'goose' }], pluralForms: [{ form: 'geese', displayWord: 'geese', parentWord: 'goose' }] },
   { word: 'hang', thirdForms: [{ form: 'hangs', displayWord: 'hang', parentWord: 'hang' }], pluralForms: [{ form: 'hanged', displayWord: 'hang', parentWord: 'hang' }] },
   { word: 'jackknife', thirdForms: [{ form: 'jackknifes', displayWord: 'jackknife', parentWord: 'jackknife' }], pluralForms: [{ form: 'jackknives', displayWord: 'jackknife', parentWord: 'jackknife' }] },
-  { word: 'knife', thirdForms: [{ form: 'knifes', displayWord: 'knife', parentWord: 'knife' }], pluralForms: [{ form: 'knives', displayWord: 'knives', parentWord: 'knife' }] },
+  { word: 'knife', thirdForms: [{ form: 'knifes', displayWord: 'knife', parentWord: 'knife' }], pluralForms: [{ form: 'knives', displayWord: 'knives', parentWord: null }] },
   { word: 'last', thirdForms: [{ form: 'lasts', displayWord: 'last', parentWord: 'last' }], pluralForms: [{ form: 'the last', displayWord: 'last', parentWord: 'last' }] },
-  { word: 'loaf', thirdForms: [{ form: 'loafs', displayWord: 'loaf', parentWord: 'loaf' }], pluralForms: [{ form: 'loaves', displayWord: 'loaves', parentWord: 'loaf' }] },
+  { word: 'loaf', thirdForms: [{ form: 'loafs', displayWord: 'loaf', parentWord: 'loaf' }], pluralForms: [{ form: 'loaves', displayWord: 'loaves', parentWord: null }] },
   { word: 'man', thirdForms: [{ form: 'mans', displayWord: 'man', parentWord: 'man' }], pluralForms: [{ form: 'men', displayWord: 'men', parentWord: 'man' }] },
   { word: 'staff', thirdForms: [{ form: 'staffs', displayWord: 'staff', parentWord: 'staff' }], pluralForms: [{ form: 'staves', displayWord: 'staff', parentWord: 'staff' }] },
   { word: 'tango', thirdForms: [{ form: 'tangoes', displayWord: 'tango', parentWord: 'tango' }], pluralForms: [{ form: 'tangos', displayWord: 'tango', parentWord: 'tango' }] },
-  { word: 'wolf', thirdForms: [{ form: 'wolfs', displayWord: 'wolf', parentWord: 'wolf' }], pluralForms: [{ form: 'wolves', displayWord: 'wolves', parentWord: 'wolf' }] },
+  { word: 'wolf', thirdForms: [{ form: 'wolfs', displayWord: 'wolf', parentWord: 'wolf' }], pluralForms: [{ form: 'wolves', displayWord: 'wolves', parentWord: null }] },
 ]
 const mixedPosComparativeLeakSamples = ['base', 'black', 'blind', 'brief', 'brown', 'calm', 'chill', 'dry', 'fancy', 'gross', 'tidy']
 const irregularComparativeLeakSamples = [
@@ -95,6 +95,7 @@ test('open family relation metadata stays correct', () => {
     '过去式:opened',
     '过去分词:opened',
     '现在分词:opening',
+    '复数:opens',
   ])
 
   assert.equal(oDict.opening.display_word, 'opening')
@@ -141,6 +142,7 @@ test('take family keeps standalone irregular forms on their own entries', () => 
     '过去式:took',
     '过去分词:taken',
     '现在分词:taking',
+    '复数:takes',
   ])
 
   assert.equal(tDict.takes.display_word, 'take')
@@ -232,6 +234,54 @@ test('standalone suppletive forms link back to base and forward to subsequent fo
   // furthest (standalone superlative of far)
   assert.equal(fDict.furthest.entry_kind, 'standalone')
   assert.deepEqual(fDict.furthest.parent_relation, { word: 'far', label: '原形' })
+})
+
+test('protected homographs stay standalone with cross-references instead of parent relations', () => {
+  const fDict = loadShard('f')
+  const lDict = loadShard('l')
+  const gDict = loadShard('g')
+  const sDict = loadShard('s')
+  const bDict = loadShard('b')
+
+  // found (past tense of find, but also standalone verb/noun)
+  assert.equal(fDict.found.entry_kind, 'standalone')
+  assert.equal(fDict.found.parent_relation, null)
+  assert.ok(
+    relationWords(fDict.found.cross_references || []).includes('过去式:find'),
+    `found should cross-reference find, got: ${relationWords(fDict.found.cross_references || [])}`,
+  )
+
+  // left (past tense of leave, but also standalone adj/noun)
+  assert.equal(lDict.left.entry_kind, 'standalone')
+  assert.equal(lDict.left.parent_relation, null)
+  assert.ok(
+    relationWords(lDict.left.cross_references || []).includes('过去式:leave'),
+    `left should cross-reference leave, got: ${relationWords(lDict.left.cross_references || [])}`,
+  )
+
+  // ground (past tense of grind, but also standalone noun)
+  assert.equal(gDict.ground.entry_kind, 'standalone')
+  assert.equal(gDict.ground.parent_relation, null)
+  assert.ok(
+    relationWords(gDict.ground.cross_references || []).includes('过去式:grind'),
+    `ground should cross-reference grind, got: ${relationWords(gDict.ground.cross_references || [])}`,
+  )
+
+  // saw (past tense of see, but also standalone noun/verb)
+  assert.equal(sDict.saw.entry_kind, 'standalone')
+  assert.equal(sDict.saw.parent_relation, null)
+  assert.ok(
+    relationWords(sDict.saw.cross_references || []).includes('过去式:see'),
+    `saw should cross-reference see, got: ${relationWords(sDict.saw.cross_references || [])}`,
+  )
+
+  // bound (past tense of bind, but also standalone adj)
+  assert.equal(bDict.bound.entry_kind, 'standalone')
+  assert.equal(bDict.bound.parent_relation, null)
+  assert.ok(
+    relationWords(bDict.bound.cross_references || []).includes('过去式:bind'),
+    `bound should cross-reference bind, got: ${relationWords(bDict.bound.cross_references || [])}`,
+  )
 })
 
 test('standalone non-comparative aliases do not gain synthetic morphology navigation', () => {

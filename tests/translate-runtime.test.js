@@ -159,3 +159,14 @@ test('comparative forms render under comparative and superlative exchanges at ru
     }
   }
 })
+
+test('protected homographs show cross-references at runtime instead of parent links', async () => {
+  const found = await runTranslate('found')
+  const left = await runTranslate('left')
+
+  const foundExchanges = found.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
+  assert.ok(foundExchanges.includes('原形:find'), `found should show cross-reference to find, got: ${JSON.stringify(found.toDict.exchanges)}`)
+
+  const leftExchanges = left.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
+  assert.ok(leftExchanges.includes('原形:leave'), `left should show cross-reference to leave, got: ${JSON.stringify(left.toDict.exchanges)}`)
+})
