@@ -1,3 +1,9 @@
 .DS_Store
 node_modules/
 dist/
+.venv/
+scripts/__pycache__/
+release/*.bobplugin
+!release/bob-plugin-oald-dictionary1.0.12.bobplugin
+vendor/oald/OALD 2024.09/stardict.db
+vendor/oald/OALD 2024.09/**/.DS_Store
