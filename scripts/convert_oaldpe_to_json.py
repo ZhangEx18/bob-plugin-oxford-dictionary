@@ -136,6 +136,7 @@ XREF_INFLECTION_TEMPLATES: dict[str, str] = {
     "plof": "{word} 的复数",
     "singof": "{word} 的单数",
     "comparof": "{word} 的比较级",
+    "defat": "{word} 的相应形式",
 }
 
 
@@ -162,7 +163,7 @@ def extract_meanings(soup: BeautifulSoup) -> dict[str, list[str]]:
             chn_tag = sense.select_one("deft chn")
             if chn_tag:
                 text = normalize_display_text(chn_tag.get_text(strip=True))
-                fragments = [f.strip() for f in re.split(r"[,;，；]", text) if f.strip()]
+                fragments = split_by_delimiters_keep_brackets(text)
                 if not fragments:
                     continue
                 # Sort by char count (excluding brackets), shortest first
@@ -192,6 +193,7 @@ def extract_meanings(soup: BeautifulSoup) -> dict[str, list[str]]:
                             if text not in used_per_pos[pos_norm]:
                                 used_per_pos[pos_norm].add(text)
                                 pos_data[pos_norm].append(text)
+                                found_sense = True
     return pos_data
 
 
@@ -554,10 +556,37 @@ def should_preserve_alias_surface(word: str, target_entry: dict[str, Any],
     return "n" not in pos_keys and "v" not in pos_keys
 
 
+def split_by_delimiters_keep_brackets(text: str, delimiters: str = ",;，；") -> list[str]:
+    """Split text by delimiters, but ignore delimiters inside brackets."""
+    result: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for char in text:
+        if char in "（(":
+            depth += 1
+        elif char in "）)":
+            depth = max(0, depth - 1)
+        elif char in delimiters and depth == 0:
+            if current:
+                result.append("".join(current).strip())
+                current = []
+            continue
+        current.append(char)
+    if current:
+        result.append("".join(current).strip())
+    return [f for f in result if f]
+
+
 def filter_entry_pos_and_translation(entry: dict[str, Any], relation_label: str) -> dict[str, Any]:
-    """Return a shallow copy of entry with pos and translation filtered by inflection type."""
-    allowed_pos = INFLECTION_POS_FILTER.get(relation_label)
-    if allowed_pos is None:
+    """Return a shallow copy of entry with pos and translation filtered by inflection type.
+
+    relation_label may be comma-separated (e.g. "第三人称单数,复数") when a form
+    appears in multiple exchange slots of its parent.
+    """
+    allowed_pos: set[str] = set()
+    for label in relation_label.split(","):
+        allowed_pos.update(INFLECTION_POS_FILTER.get(label, set()))
+    if not allowed_pos:
         return dict(entry)
 
     result = dict(entry)
@@ -802,6 +831,10 @@ def main():
                 if entry.get("pos") and form_key not in parent_relations_map:
                     parent_relations_map[form_key] = build_relation(entry["word"], "原形")
                     parent_relations_map[form_key]["_inflection_label"] = label
+                elif entry.get("pos") and form_key in parent_relations_map:
+                    existing = parent_relations_map[form_key].get("_inflection_label", "")
+                    if existing and label not in existing.split(","):
+                        parent_relations_map[form_key]["_inflection_label"] = f"{existing},{label}"
 
     finalized_entries: dict[str, dict[str, Any]] = {}
     for word_key, entry in standalone_cache.items():
