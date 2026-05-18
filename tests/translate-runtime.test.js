@@ -7,9 +7,23 @@ const esbuild = require('esbuild')
 
 const ENTRY_TS_PATH = path.join(__dirname, '..', 'src', 'entry.ts')
 
-function createFileBridge() {
+function loadShard(char) {
+  const dictPath = path.join(__dirname, '..', 'dict', `${char}.json`)
+  return JSON.parse(fs.readFileSync(dictPath, 'utf8'))
+}
+
+function createFileBridge(overrides = {}) {
   return {
     read(relativePath) {
+      const override = overrides[relativePath]
+      if (override != null) {
+        return {
+          toUTF8() {
+            return override
+          },
+        }
+      }
+
       const fullPath = path.join(__dirname, '..', relativePath)
       if (!fs.existsSync(fullPath)) return null
 
@@ -22,7 +36,7 @@ function createFileBridge() {
   }
 }
 
-async function loadRuntime() {
+async function loadRuntime(overrides = {}) {
   const buildResult = await esbuild.build({
     entryPoints: [ENTRY_TS_PATH],
     bundle: true,
@@ -34,7 +48,7 @@ async function loadRuntime() {
   })
   const source = buildResult.outputFiles[0].text
   const context = {
-    $file: createFileBridge(),
+    $file: createFileBridge(overrides),
     module: { exports: {} },
     exports: {},
     require,
@@ -51,8 +65,8 @@ async function loadRuntime() {
   return context.module.exports
 }
 
-async function runTranslate(word) {
-  const runtime = await loadRuntime()
+async function runTranslate(word, overrides = {}) {
+  const runtime = await loadRuntime(overrides)
 
   return new Promise((resolve, reject) => {
     runtime.translate({ text: word, detectFrom: 'en' }, (payload) => {
@@ -166,56 +180,132 @@ test('protected homographs show cross-references at runtime instead of parent li
 
   const foundExchanges = found.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
   assert.ok(foundExchanges.includes('原形:find'), `found should show cross-reference to find, got: ${JSON.stringify(found.toDict.exchanges)}`)
+  assert.equal(
+    foundExchanges.filter((item) => item === '原形:find').length,
+    1,
+    `found should only show one 原形:find row, got: ${JSON.stringify(found.toDict.exchanges)}`,
+  )
 
   const leftExchanges = left.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
   assert.ok(leftExchanges.includes('原形:leave'), `left should show cross-reference to leave, got: ${JSON.stringify(left.toDict.exchanges)}`)
+  assert.equal(
+    leftExchanges.filter((item) => item === '原形:leave').length,
+    1,
+    `left should only show one 原形:leave row, got: ${JSON.stringify(left.toDict.exchanges)}`,
+  )
+
+  const foundRelationTypes = (found.raw.entry.relations || []).map((relation) => relation.type)
+  assert.ok(foundRelationTypes.includes('xref'), `found should include xref relation, got: ${JSON.stringify(found.raw.entry.relations)}`)
 })
 
 test('leaves aggregates parts from both leaf and leave inflection sources', async () => {
   const result = await runTranslate('leaves')
 
-  // Should show leaves as a standalone entry with its own phonetics
   assert.equal(result.toDict.word, 'leaves')
   assert.ok(result.toDict.phonetics.length > 0, 'leaves should have phonetics')
 
-  // Exchange bar should show both source words as 原形
   const exchangeMap = new Map(result.toDict.exchanges.map((item) => [item.name, item.words]))
   const rootWords = exchangeMap.get('原形') || []
   assert.ok(rootWords.includes('leaf'), `leaves exchanges should include leaf as 原形, got: ${rootWords}`)
   assert.ok(rootWords.includes('leave'), `leaves exchanges should include leave as 原形, got: ${rootWords}`)
 
-  // Parts should include both leaf's noun meanings and leave's verb meanings
-  const parts = result.toDict.parts
+  const parts = JSON.parse(JSON.stringify(result.toDict.parts))
   assert.ok(parts.length >= 2, `leaves should have at least 2 parts, got: ${parts.length}`)
 
-  // Aggregate all means for each part (there may be multiple n./v. entries)
-  const partMap = new Map()
-  for (const p of parts) {
-    const existing = partMap.get(p.part) || []
-    partMap.set(p.part, existing.concat(p.means))
+  const nounParts = parts.filter((part) => part.part === 'n.')
+  assert.equal(nounParts.length, 1, `leaves should merge noun parts, got: ${JSON.stringify(parts)}`)
+  assert.deepEqual(nounParts[0]?.means || [], [
+    '叶,叶片；有…状叶的；(纸)页；薄金属片；活动桌板\n[leaf 的复数]',
+    '假期,休假；准许\n[leave 的复数]',
+  ])
+
+  const verbParts = parts.filter((part) => part.part === 'v.')
+  assert.equal(verbParts.length, 1, `leaves should merge verb parts, got: ${JSON.stringify(parts)}`)
+  assert.deepEqual(verbParts[0]?.means || [], [
+    '离开(某人或某处),离开居住地点(或群体、工作单位等)；遗弃；忘了带；使保留；留下备用(或销售等)；使发生；发布；不立刻做；把…留交；(去世时)遗赠；(死后)留下(家人)；剩余\n[leave 的 第三人称单数]',
+  ])
+})
+
+test('runtime prefers translation_parts when present', async () => {
+  const shard = loadShard('o')
+  const obtain = shard.obtain
+  const modifiedShard = {
+    ...shard,
+    obtain: {
+      ...obtain,
+      translation: 'v. fallback line',
+      translation_parts: [
+        { pos: 'v.', meanings: ['first meaning', 'second meaning'] },
+        { pos: 'n.', meanings: ['nominal meaning'] },
+      ],
+    },
   }
 
-  // Should have noun part from leaf (复数 → only n. POS allowed)
-  assert.ok(partMap.has('n.'), `leaves should have noun part, got: ${[...partMap.keys()]}`)
-  const nounMeans = partMap.get('n.') || []
-  assert.ok(
-    nounMeans.some((m) => m.includes('leaf') && m.includes('复数')),
-    `noun means should reference leaf plural, got: ${nounMeans}`,
-  )
+  const result = await runTranslate('obtain', {
+    'dict/o.json': JSON.stringify(modifiedShard),
+  })
 
-  // Should have verb part from leave (第三人称单数 → only v. POS allowed)
-  assert.ok(partMap.has('v.'), `leaves should have verb part, got: ${[...partMap.keys()]}`)
-  const verbMeans = partMap.get('v.') || []
-  assert.ok(
-    verbMeans.some((m) => m.includes('leave') && m.includes('第三人称单数')),
-    `verb means should reference leave 第三人称单数, got: ${verbMeans}`,
-  )
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.parts)), [
+    { part: 'v.', means: ['first meaning', 'second meaning'] },
+    { part: 'n.', means: ['nominal meaning'] },
+  ])
+})
 
-  // Should NOT have verb means labeled as 复数 (POS filtering must separate labels)
-  assert.ok(
-    !verbMeans.some((m) => m.includes('leave') && m.includes('复数')),
-    `verb means should NOT include leave 复数, got: ${verbMeans}`,
-  )
+test('runtime falls back to translation string when translation_parts is absent', async () => {
+  const shard = loadShard('o')
+  const obtain = shard.obtain
+  const { translation_parts, ...obtainWithoutParts } = obtain
+  const modifiedShard = {
+    ...shard,
+    obtain: obtainWithoutParts,
+  }
+
+  const result = await runTranslate('obtain', {
+    'dict/o.json': JSON.stringify(modifiedShard),
+  })
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.parts)), [
+    { part: 'v.', means: ['(尤指经努力)获得,赢得；(规则、制度、习俗等)流行'] },
+  ])
+})
+
+test('runtime falls back to translation string when translation_parts is unusable', async () => {
+  const shard = loadShard('o')
+  const obtain = shard.obtain
+  const modifiedShard = {
+    ...shard,
+    obtain: {
+      ...obtain,
+      translation_parts: [{ pos: '', meanings: [] }],
+    },
+  }
+
+  const result = await runTranslate('obtain', {
+    'dict/o.json': JSON.stringify(modifiedShard),
+  })
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.parts)), [
+    { part: 'v.', means: ['(尤指经努力)获得,赢得；(规则、制度、习俗等)流行'] },
+  ])
+})
+
+test('scripts aggregates countable noun plural senses and verb third-person senses', async () => {
+  const result = await runTranslate('scripts')
+  const parts = JSON.parse(JSON.stringify(result.toDict.parts))
+
+  const nounPart = parts.find((part) => part.part === 'n.')
+  assert.ok(nounPart, `scripts should include noun meanings, got: ${JSON.stringify(parts)}`)
+  assert.deepEqual(nounPart.means, [
+    '剧本,电影剧本；(一种语言的)字母系统；笔试答卷；脚本(程序)(计算机的一系列指令)\n[script 的复数]',
+  ])
+  assert.ok(!nounPart.means[0].includes('笔迹'), `scripts plural noun should exclude uncountable sense, got: ${nounPart.means[0]}`)
+
+  const verbPart = parts.find((part) => part.part === 'v.')
+  assert.ok(verbPart, `scripts should include verb meanings, got: ${JSON.stringify(parts)}`)
+  assert.deepEqual(verbPart.means, ['为(电影或戏剧等)写剧本\n[script 的 第三人称单数]'])
+
+  const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
+  assert.equal(exchangeRows.filter((row) => row === '原形:script').length, 1, `scripts should show one root exchange, got: ${JSON.stringify(result.toDict.exchanges)}`)
 })
 
 test('batch irregular verb inflections render correct exchanges at runtime', async () => {
@@ -232,6 +322,21 @@ test('batch irregular verb inflections render correct exchanges at runtime', asy
     if (pastpart) assert.deepEqual([...exchangeMap.get('过去分词')], pastpart, `${word} past part mismatch`)
     if (prespart) assert.deepEqual([...exchangeMap.get('现在分词')], prespart, `${word} pres part mismatch`)
   }
+})
+
+test('same-surface past and participle forms still render in runtime exchanges', async () => {
+  const result = await runTranslate('put')
+  const exchangeMap = new Map(result.toDict.exchanges.map((item) => [item.name, item.words]))
+
+  assert.deepEqual([...exchangeMap.get('第三人称单数')], ['puts'])
+  assert.deepEqual([...exchangeMap.get('过去式')], ['put'])
+  assert.deepEqual([...exchangeMap.get('过去分词')], ['put'])
+  assert.deepEqual([...exchangeMap.get('现在分词')], ['putting'])
+})
+
+test('dug only renders back-navigation at runtime', async () => {
+  const result = await runTranslate('dug')
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.exchanges)), [{ name: '原形', words: ['dig'] }])
 })
 
 test('batch comparative and superlative forms render correct exchanges', async () => {

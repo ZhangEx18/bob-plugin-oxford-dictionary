@@ -29,9 +29,9 @@ const mDict = loadShard('m')
 const allEntries = loadAllEntries()
 
 const verbSamples = ['abandon', 'abase', 'abate', 'abbreviate', 'abdicate', 'abduct', 'abet', 'abhor', 'abide', 'abjure', 'abolish', 'abominate', 'abort', 'abound', 'abrade', 'abridge', 'abrogate', 'abscond', 'abseil', 'absent', 'absolve', 'absorb', 'abstain', 'abstract', 'abuse', 'abut', 'accede', 'accelerate', 'accent', 'accentuate', 'accept', 'access', 'accessorize', 'acclaim', 'acclimate']
-const nounSamples = ['a-bomb', 'a-frame', 'a-level', 'a-road', 'a-side', 'a-team', 'aardvark', 'abacus', 'abalone', 'abandonment', 'abasement', 'abatement', 'abattoir', 'abaya', 'abba', 'abbey', 'abbot', 'abbreviation', 'abc', 'abdication', 'abdomen', 'abdominal', 'abductee', 'abduction', 'abductor', 'aberdonian', 'aberration', 'abhorrence', 'ability', 'ablation', 'ablative', 'ableism', 'abm', 'abnegation', 'abnormality']
-const nonNounVerbSamples = ['a-cappella', 'a-couple', 'a-fortiori', 'a-gogo', 'a-la', 'a-line', 'a-list', 'a-ok', 'aargh', 'ab-initio', 'aback', 'abaft', 'abandoned', 'abashed', 'abbreviated', 'abed', 'aberrant', 'abeyance', 'abhorrent', 'abiding', 'abiotic', 'abject', 'abjectly', 'ablaze']
-const aliasPlusSSamples = ['a-lines', 'a-lists', 'aberrants', 'abeyances', 'abjects', 'ables', 'abnormals', 'abortives', 'aboves', 'abracadabras', 'abroads', 'abrupts', 'absorbents', 'abstinents', 'absurds', 'accidentals', 'accordances', 'achs', 'actuals', 'acutes']
+const nounSamples = ['a-bomb', 'a-frame', 'a-level', 'a-road', 'a-side', 'a-team', 'aardvark', 'abacus', 'abalone', 'abandonment', 'abasement', 'abatement', 'abattoir', 'abaya', 'abba', 'abbey', 'abbot', 'abbreviation', 'abc', 'abdication', 'abdomen', 'abdominal', 'abductee', 'abduction', 'abductor', 'aberdonian', 'aberration', 'abeyance', 'abhorrence', 'ability', 'ablation', 'ablative', 'ableism', 'abm', 'abnegation', 'abnormality']
+const nonNounVerbSamples = ['a-cappella', 'a-couple', 'a-fortiori', 'a-gogo', 'a-la', 'a-line', 'a-list', 'a-ok', 'aargh', 'ab-initio', 'aback', 'abaft', 'abandoned', 'abashed', 'abbreviated', 'abed', 'aberrant', 'abhorrent', 'abiding', 'abiotic', 'abject', 'abjectly', 'ablaze']
+const aliasPlusSSamples = ['a-lines', 'a-lists', 'aberrants', 'abjects', 'ables', 'abnormals', 'abortives', 'aboves', 'abracadabras', 'abroads', 'abrupts', 'absorbents', 'abstinents', 'absurds', 'accidentals', 'achs', 'actuals', 'acutes']
 const mixedPosPluralSamples = ['ally', 'baby', 'embargo', 'duck', 'work']
 const sameSurfaceNvSamples = ['ally', 'bath', 'belly', 'bivvy', 'bully', 'bus', 'butcher', 'caddie', 'demo', 'echo', 'ferry', 'gas', 'hoof', 'index', 'lasso', 'moo']
 const distinctSurfaceNvSamples = [
@@ -66,7 +66,7 @@ const comparativeExchangeSamples = [
   { word: 'black', comparativeForms: ['blacker'], superlativeForms: ['blackest'] },
   { word: 'dry', comparativeForms: ['drier'], superlativeForms: ['driest'] },
 ]
-const emptyPosLeakSamples = ['bye byes', 'byebyes', "i's", "is's", 'is.s', "nibs's", 'one-way mirrors', 'smithers']
+const emptyPosLeakSamples = ['bye byes', 'byebyes', "i's", "is's", 'is.s', "nibs's", 'smithers']
 const relationTargetCoverageSamples = ['staff', 'travel', 'lambast', 'field-of-vision', 'line']
 
 function relationWords(relations = []) {
@@ -97,6 +97,15 @@ test('open family relation metadata stays correct', () => {
     '现在分词:opening',
     '复数:opens',
   ])
+
+  const openRelationRows = (oDict.open.relations || [])
+    .filter((relation) => relation.type === 'inflection')
+    .map((relation) => `${relation.label}:${relation.target}:${relation.display}:${relation.navigable}`)
+  assert.ok(openRelationRows.includes('第三人称单数:opens:exchange:true'))
+  assert.ok(openRelationRows.includes('过去式:opened:exchange:true'))
+  assert.ok(openRelationRows.includes('过去分词:opened:exchange:true'))
+  assert.ok(openRelationRows.includes('现在分词:opening:exchange:true'))
+  assert.ok(openRelationRows.includes('复数:opens:exchange:true'))
 
   assert.equal(oDict.opening.display_word, 'opening')
   assert.equal(oDict.opening.parent_relation, null)
@@ -302,7 +311,7 @@ test('standalone non-comparative aliases do not gain synthetic morphology naviga
 })
 
 test('batch morphology coverage spans 100+ words across relation categories', () => {
-  assert.equal(verbSamples.length + nounSamples.length + nonNounVerbSamples.length + aliasPlusSSamples.length, 114)
+  assert.equal(verbSamples.length + nounSamples.length + nonNounVerbSamples.length + aliasPlusSSamples.length, 112)
 
   for (const word of verbSamples) {
     const entry = entryFor(word)
@@ -493,6 +502,7 @@ test('leaves has inflection_sources with separate labels per relation', () => {
   const leaves = lDict.leaves
 
   assert.ok(leaves.inflection_sources, 'leaves should have inflection_sources')
+  assert.ok(Array.isArray(leaves.relations), 'leaves should have relations array')
   // leaf/复数 + leave/第三人称单数 + leave/复数 = 3 distinct sources
   assert.equal(leaves.inflection_sources.length, 3, `leaves should have exactly 3 inflection_sources, got: ${leaves.inflection_sources?.length || 0}`)
 
@@ -503,6 +513,20 @@ test('leaves has inflection_sources with separate labels per relation', () => {
   assert.ok(leafPlural, `leaves should have source leaf/复数`)
   assert.ok(leaveThirdPs, `leaves should have source leave/第三人称单数`)
   assert.ok(leavePlural, `leaves should have source leave/复数`)
+
+  const originRows = leaves.relations
+    .filter((relation) => relation.type === 'origin')
+    .map((relation) => `${relation.label}:${relation.target}`)
+  assert.ok(originRows.includes('复数:leaf'), `leaves relations should include 复数:leaf, got: ${originRows}`)
+  assert.ok(originRows.includes('第三人称单数:leave'), `leaves relations should include 第三人称单数:leave, got: ${originRows}`)
+  assert.ok(originRows.includes('复数:leave'), `leaves relations should include 复数:leave, got: ${originRows}`)
+
+  const originPosScopes = leaves.relations
+    .filter((relation) => relation.type === 'origin')
+    .map((relation) => `${relation.label}:${relation.target}:${(relation.pos_scope || []).join(',')}`)
+  assert.ok(originPosScopes.includes('复数:leaf:n'), `leaves origin should preserve noun scope for leaf, got: ${originPosScopes}`)
+  assert.ok(originPosScopes.includes('第三人称单数:leave:v'), `leaves origin should preserve verb scope for leave third-person, got: ${originPosScopes}`)
+  assert.ok(originPosScopes.includes('复数:leave:n'), `leaves origin should preserve noun scope for leave plural, got: ${originPosScopes}`)
 })
 
 test('batch irregular noun plurals preserve correct relations', () => {
@@ -544,6 +568,45 @@ test('batch irregular verb inflections preserve correct relations', () => {
     if (pastpart) assert.ok(childWords.includes(`过去分词:${pastpart}`), `${word} should have past part ${pastpart}`)
     if (prespart) assert.ok(childWords.includes(`现在分词:${prespart}`), `${word} should have pres part ${prespart}`)
   }
+})
+
+test('same-surface irregular verb inflections stay visible in relation metadata', () => {
+  const cases = [
+    { word: 'put', labels: ['过去式:put', '过去分词:put'] },
+    { word: 'cast', labels: ['过去式:cast', '过去分词:cast'] },
+    { word: 'cost', labels: ['过去式:cost', '过去分词:cost'] },
+    { word: 'become', labels: ['过去分词:become'] },
+    { word: 'come', labels: ['过去分词:come'] },
+    { word: 'beat', labels: ['过去式:beat'] },
+  ]
+
+  for (const { word, labels } of cases) {
+    const entry = entryFor(word)
+    assert.ok(entry, `${word} should exist`)
+    const childRows = new Set(relationWords(entry.child_relations))
+    const relationRows = new Set(
+      (entry.relations || [])
+        .filter((relation) => relation.type === 'inflection')
+        .map((relation) => `${relation.label}:${relation.target}`),
+    )
+
+    for (const label of labels) {
+      assert.ok(childRows.has(label), `${word} child_relations should include ${label}, got: ${[...childRows]}`)
+      assert.ok(relationRows.has(label), `${word} relations should include ${label}, got: ${[...relationRows]}`)
+    }
+  }
+})
+
+test('dug keeps only strict back-navigation metadata', () => {
+  const dDict = loadShard('d')
+  const dug = dDict.dug
+  assert.ok(dug, 'dug should exist')
+  assert.deepEqual(dug.parent_relation, { word: 'dig', label: '原形' })
+  assert.ok(!relationWords(dug.child_relations).includes('现在分词:digging'), `dug should not link forward to digging, got: ${relationWords(dug.child_relations)}`)
+  const inflectionRows = (dug.relations || [])
+    .filter((relation) => relation.type === 'inflection')
+    .map((relation) => `${relation.label}:${relation.target}`)
+  assert.ok(!inflectionRows.includes('现在分词:digging'), `dug relations should not include 现在分词:digging, got: ${inflectionRows}`)
 })
 
 test('batch comparative and superlative families preserve correct relations', () => {
@@ -653,5 +716,66 @@ test('batch protected homographs with cross-references include ground and bound'
       relationWords(entry.cross_references || []).includes(`${xrefLabel}:${xrefWord}`),
       `${word} should cross-reference ${xrefWord}, got: ${relationWords(entry.cross_references || [])}`,
     )
+    const relationRows = (entry.relations || [])
+      .filter((relation) => relation.type === 'xref')
+      .map((relation) => `${relation.label}:${relation.target}`)
+    assert.ok(
+      relationRows.includes(`${xrefLabel}:${xrefWord}`),
+      `${word} relations should include ${xrefLabel}:${xrefWord}, got: ${relationRows}`,
+    )
   }
+})
+
+test('single-sense parts keep the full meaning line while multi-sense parts dedupe bracket noise', () => {
+  assert.equal(oDict.objection.translation, 'n. 反对的理由；反对；异议')
+  assert.equal(oDict.obligation.translation, 'n. 义务,职责；责任')
+  assert.equal(oDict.obtain.translation, 'v. (尤指经努力)获得,赢得；(规则、制度、习俗等)流行')
+
+  assert.deepEqual(oDict.obtain.translation_parts, [
+    { pos: 'v.', meanings: ['(尤指经努力)获得,赢得', '(规则、制度、习俗等)流行'] },
+  ])
+  assert.deepEqual(oDict.obligation.translation_parts, [
+    { pos: 'n.', meanings: ['义务,职责', '责任'] },
+  ])
+
+  const sDict = loadShard('s')
+  assert.deepEqual(sDict.script.translation_parts, [
+    {
+      pos: 'n.',
+      meanings: ['剧本,电影剧本', '笔迹', '(一种语言的)字母系统', '笔试答卷', '脚本(程序)(计算机的一系列指令)'],
+    },
+    { pos: 'v.', meanings: ['为(电影或戏剧等)写剧本'] },
+  ])
+
+  const obscure = oDict.obscure
+  assert.ok(obscure, 'obscure should exist')
+  assert.ok(
+    obscure.translation.includes('v. 使模糊；使隐晦；使费解'),
+    `obscure verb line should keep the full single sense, got: ${obscure.translation}`,
+  )
+
+  assert.equal(aDict.aback.translation, 'adv. 被(…)吓了一跳；大吃一惊；震惊')
+  assert.equal(aDict.abeyance.translation, 'n. 搁置；暂停使用；暂时中止')
+})
+
+test('entries preserve source POS order for translation and pos summary', () => {
+  const dDict = loadShard('d')
+  const down = dDict.down
+  assert.equal(down.pos, 'adv:50/prep:11/v:14/adj:11/n:14')
+  assert.ok(down.translation.startsWith('adv. '), `down translation should start with adv, got: ${down.translation}`)
+  assert.ok(down.translation.includes('\nprep. '), `down translation should keep prep before verb, got: ${down.translation}`)
+  assert.ok(down.translation.includes('\nv. '), `down translation should include verb line, got: ${down.translation}`)
+  assert.ok(down.translation.includes('\nadj. '), `down translation should include adjective line, got: ${down.translation}`)
+  assert.ok(down.translation.includes('\nn. '), `down translation should end with noun line, got: ${down.translation}`)
+  assert.ok(down.translation.indexOf('\nprep. ') < down.translation.indexOf('\nv. '), 'down prep should appear before verb')
+  assert.ok(down.translation.indexOf('\nv. ') < down.translation.indexOf('\nadj. '), 'down verb should appear before adj')
+  assert.ok(down.translation.indexOf('\nadj. ') < down.translation.indexOf('\nn. '), 'down adj should appear before noun')
+
+  const round = loadShard('r').round
+  assert.equal(round.pos, 'adj:10/adv:26/prep:16/n:39/v:10')
+  assert.ok(round.translation.startsWith('adj. '), `round translation should start with adj, got: ${round.translation}`)
+  assert.ok(round.translation.indexOf('\nadv. ') > 0, 'round should include adv after adj')
+  assert.ok(round.translation.indexOf('\nprep. ') > round.translation.indexOf('\nadv. '), 'round prep should appear after adv')
+  assert.ok(round.translation.indexOf('\nn. ') > round.translation.indexOf('\nprep. '), 'round noun should appear after prep')
+  assert.ok(round.translation.indexOf('\nv. ') > round.translation.indexOf('\nn. '), 'round verb should appear after noun')
 })

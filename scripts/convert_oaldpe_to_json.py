@@ -36,6 +36,10 @@ PUNCTUATION_MAP = str.maketrans({
     "】": "]",
     "｛": "{",
     "｝": "}",
+    "（": "(",
+    "）": ")",
+    "，": ",",
+    ";": "；",
 })
 
 EXCHANGE_DISPLAY_LABELS = {
@@ -61,6 +65,10 @@ FORM_KEY_FAMILIES: dict[str, set[str]] = {
 }
 IRREGULAR_COMPARATIVE_FORMS = {"more", "less", "better", "worse", "farther", "further"}
 IRREGULAR_SUPERLATIVE_FORMS = {"most", "least", "best", "worst", "farthest", "furthest"}
+FRAGMENT_JOINER = ","
+MEANING_JOINER = "；"
+QUALIFIER_LEFT = "("
+QUALIFIER_RIGHT = ")"
 
 # Maps inflection relation labels to the POS keys they are allowed to inherit.
 INFLECTION_POS_FILTER: dict[str, set[str]] = {
@@ -140,13 +148,230 @@ XREF_INFLECTION_TEMPLATES: dict[str, str] = {
 }
 
 
-def extract_meanings(soup: BeautifulSoup) -> dict[str, list[str]]:
-    pos_data: dict[str, list[str]] = {}
-    used_per_pos: dict[str, set[str]] = {}
+def strip_bracket_content(text: str) -> str:
+    return re.sub(r"[（(].*?[）)]", "", text)
 
-    def count_chars(text: str) -> int:
-        cleaned = re.sub(r"[（(].*?[）)]", "", text)
-        return len(cleaned.strip())
+
+def build_meaning_dedupe_key(text: str) -> str:
+    cleaned = normalize_display_text(strip_bracket_content(text))
+    return re.sub(r"[，,；;、\s]+", "", cleaned)
+
+
+def extract_semantic_qualifier(sense: BeautifulSoup) -> str:
+    qualifiers: list[str] = []
+    for chn_tag in sense.select(".dis-g chn"):
+        qualifier = normalize_display_text(chn_tag.get_text(strip=True))
+        if qualifier and qualifier not in qualifiers:
+            qualifiers.append(qualifier)
+    return ",".join(qualifiers)
+
+
+def extract_countability(sense: BeautifulSoup) -> str | None:
+    grammar_text = " ".join(
+        normalize_display_text(grammar_tag.get_text(" ", strip=True))
+        for grammar_tag in sense.select(".grammar")
+    ).lower()
+    grammar_tokens = set(re.findall(r"[a-z]+", grammar_text))
+    has_countable = "countable" in grammar_tokens
+    has_uncountable = "uncountable" in grammar_tokens
+
+    if has_countable and has_uncountable:
+        return "both"
+    if has_countable:
+        return "countable"
+    if has_uncountable:
+        return "uncountable"
+    return None
+
+
+def merge_countability_values(values: list[str | None]) -> str | None:
+    normalized_values = {value for value in values if value}
+    if not normalized_values:
+        return None
+    if len(normalized_values) == 1:
+        return next(iter(normalized_values))
+    return None
+
+
+def prepend_qualifier(text: str, qualifier: str) -> str:
+    normalized_text = normalize_display_text(text)
+    if not qualifier or normalized_text.startswith((QUALIFIER_LEFT, "（")):
+        return normalized_text
+    return f"{QUALIFIER_LEFT}{qualifier}{QUALIFIER_RIGHT}{normalized_text}"
+
+
+def extract_unique_fragments(text: str) -> list[str]:
+    fragments: list[str] = []
+    seen_keys: set[str] = set()
+    for fragment in split_by_delimiters_keep_brackets(text):
+        normalized_fragment = normalize_display_text(fragment)
+        if not normalized_fragment:
+            continue
+        dedupe_key = build_meaning_dedupe_key(normalized_fragment)
+        if not dedupe_key or dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        fragments.append(normalized_fragment)
+    return fragments
+
+
+def pick_followup_fragment(fragments: list[str], qualifier: str) -> str | None:
+    if not fragments:
+        return None
+    if qualifier:
+        preferred_fragments = [fragment for fragment in fragments if build_meaning_dedupe_key(fragment) != "存在"]
+        if preferred_fragments:
+            return preferred_fragments[0]
+    return fragments[0]
+
+
+def collect_sense_records(eroot: BeautifulSoup) -> list[dict[str, Any]]:
+    core_senses = extract_core_senses(eroot)
+    fallback_senses = eroot.select("li.sense") if not core_senses else []
+    candidate_senses = core_senses or fallback_senses
+    sense_records = [
+        {
+            "text": normalize_display_text(chn_tag.get_text(strip=True)),
+            "qualifier": extract_semantic_qualifier(sense),
+            "countability": extract_countability(sense),
+        }
+        for sense in candidate_senses
+        for chn_tag in [sense.select_one("deft chn")]
+        if chn_tag and normalize_display_text(chn_tag.get_text(strip=True))
+    ]
+    if sense_records:
+        return sense_records
+
+    xref = eroot.select_one(".xrefs")
+    if not xref:
+        return []
+    xt = xref.get("xt", "")
+    template = XREF_INFLECTION_TEMPLATES.get(xt)
+    if not template:
+        return []
+    xh = xref.select_one(".xh")
+    if not xh:
+        return []
+    word = xh.get_text(strip=True)
+    if not word:
+        return []
+    return [{"text": template.format(word=word), "qualifier": "", "countability": None}]
+
+
+def select_primary_fragments(
+    sense_records: list[dict[str, Any]], used_keys: set[str]
+) -> tuple[list[str], str, list[str | None], list[dict[str, Any]]]:
+    pending_records: list[dict[str, Any]] = []
+    primary_fragments: list[str] = []
+    primary_qualifier = ""
+    primary_countability_values: list[str | None] = []
+
+    for index, record in enumerate(sense_records):
+        fragments = [
+            fragment
+            for fragment in extract_unique_fragments(record["text"])
+            if build_meaning_dedupe_key(fragment) not in used_keys
+        ]
+        if not fragments:
+            continue
+
+        if index == 0:
+            primary_qualifier = record["qualifier"]
+            primary_fragments = fragments[:2]
+            if primary_fragments:
+                primary_countability_values.append(record.get("countability"))
+            if len(primary_fragments) < 2:
+                pending_records.append(
+                    {
+                        "qualifier": record["qualifier"],
+                        "fragments": fragments[len(primary_fragments):],
+                        "countability": record.get("countability"),
+                    }
+                )
+            for fragment in primary_fragments:
+                used_keys.add(build_meaning_dedupe_key(fragment))
+            continue
+
+        pending_records.append(
+            {
+                "qualifier": record["qualifier"],
+                "fragments": fragments,
+                "countability": record.get("countability"),
+            }
+        )
+
+    return primary_fragments, primary_qualifier, primary_countability_values, pending_records
+
+
+def fill_primary_from_followups(
+    primary_fragments: list[str],
+    primary_countability_values: list[str | None],
+    pending_records: list[dict[str, Any]],
+    used_keys: set[str],
+) -> tuple[list[str], list[str | None]]:
+    next_fragments = [*primary_fragments]
+    next_countability_values = [*primary_countability_values]
+    for pending_record in pending_records:
+        if len(next_fragments) >= 2:
+            break
+        for fragment in pending_record["fragments"]:
+            dedupe_key = build_meaning_dedupe_key(fragment)
+            if dedupe_key in used_keys:
+                continue
+            next_fragments.append(fragment)
+            next_countability_values.append(pending_record.get("countability"))
+            used_keys.add(dedupe_key)
+            if len(next_fragments) >= 2:
+                break
+    return next_fragments, next_countability_values
+
+
+def build_meaning_items(sense_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if len(sense_records) == 1:
+        only_record = sense_records[0]
+        return [{
+            "text": prepend_qualifier(only_record["text"], only_record["qualifier"]),
+            "countability": only_record.get("countability"),
+        }]
+
+    used_keys: set[str] = set()
+    meanings: list[dict[str, Any]] = []
+    primary_fragments, primary_qualifier, primary_countability_values, pending_records = select_primary_fragments(sense_records, used_keys)
+
+    if primary_fragments:
+        primary_fragments, primary_countability_values = fill_primary_from_followups(
+            primary_fragments,
+            primary_countability_values,
+            pending_records,
+            used_keys,
+        )
+        meanings.append({
+            "text": prepend_qualifier(FRAGMENT_JOINER.join(primary_fragments), primary_qualifier),
+            "countability": merge_countability_values(primary_countability_values),
+        })
+
+    for pending_record in pending_records:
+        fragments = [
+            fragment
+            for fragment in pending_record["fragments"]
+            if build_meaning_dedupe_key(fragment) not in used_keys
+        ]
+        if not fragments:
+            continue
+        followup_fragment = pick_followup_fragment(fragments, str(pending_record["qualifier"]))
+        if not followup_fragment:
+            continue
+        used_keys.add(build_meaning_dedupe_key(followup_fragment))
+        meanings.append({
+            "text": prepend_qualifier(followup_fragment, str(pending_record["qualifier"])),
+            "countability": pending_record.get("countability"),
+        })
+
+    return meanings
+
+
+def extract_meaning_items(soup: BeautifulSoup) -> dict[str, list[dict[str, Any]]]:
+    sense_records_by_pos: dict[str, list[dict[str, Any]]] = {}
 
     for eroot in soup.select(".oald-entry-root"):
         pos_tag = eroot.select_one(".pos")
@@ -155,46 +380,26 @@ def extract_meanings(soup: BeautifulSoup) -> dict[str, list[str]]:
         pos_norm = normalize_pos(pos_tag.get_text(strip=True))
         if not pos_norm or pos_norm not in VALID_POS:
             continue
-        if pos_norm not in pos_data:
-            pos_data[pos_norm] = []
-            used_per_pos[pos_norm] = set()
-        found_sense = False
-        for sense in extract_core_senses(eroot):
-            chn_tag = sense.select_one("deft chn")
-            if chn_tag:
-                text = normalize_display_text(chn_tag.get_text(strip=True))
-                fragments = split_by_delimiters_keep_brackets(text)
-                if not fragments:
-                    continue
-                # Sort by char count (excluding brackets), shortest first
-                fragments_sorted = sorted(fragments, key=count_chars)
-                best = None
-                for f in fragments_sorted:
-                    if f not in used_per_pos[pos_norm]:
-                        best = f
-                        break
-                if best:
-                    used_per_pos[pos_norm].add(best)
-                    pos_data[pos_norm].append(best)
-                    found_sense = True
-        # If no deft chn was found but there is an inflection cross-reference,
-        # generate a minimal translation from the xref.
-        if not found_sense:
-            xref = eroot.select_one(".xrefs")
-            if xref:
-                xt = xref.get("xt", "")
-                template = XREF_INFLECTION_TEMPLATES.get(xt)
-                if template:
-                    xh = xref.select_one(".xh")
-                    if xh:
-                        word = xh.get_text(strip=True)
-                        if word:
-                            text = template.format(word=word)
-                            if text not in used_per_pos[pos_norm]:
-                                used_per_pos[pos_norm].add(text)
-                                pos_data[pos_norm].append(text)
-                                found_sense = True
+
+        sense_records = collect_sense_records(eroot)
+        if sense_records:
+            sense_records_by_pos.setdefault(pos_norm, []).extend(sense_records)
+
+    pos_data: dict[str, list[dict[str, Any]]] = {}
+    for pos_norm, sense_records in sense_records_by_pos.items():
+        meanings = build_meaning_items(sense_records)
+        if meanings:
+            pos_data[pos_norm] = meanings
+
     return pos_data
+
+
+def extract_meanings(soup: BeautifulSoup) -> dict[str, list[str]]:
+    return {
+        pos_norm: [meaning["text"] for meaning in meanings]
+        for pos_norm, meanings in extract_meaning_items(soup).items()
+        if meanings
+    }
 
 
 def extract_exchange(soup: BeautifulSoup) -> str:
@@ -363,6 +568,41 @@ def build_relation(word: str, label: str) -> dict[str, str]:
     return {"word": word, "label": label}
 
 
+def build_pos_scope(label: str) -> list[str]:
+    pos_order = ["n", "v", "adj", "adv"]
+    allowed = INFLECTION_POS_FILTER.get(label, set())
+    return [pos for pos in pos_order if pos in allowed]
+
+
+def build_relation_edge(*, relation_type: str, target: str, label: str,
+                        direction: str = "outgoing", navigable: bool = True,
+                        display: str = "exchange", source: str = "exchange",
+                        primary: bool = False) -> dict[str, Any]:
+    edge: dict[str, Any] = {
+        "type": relation_type,
+        "target": target,
+        "label": label,
+        "direction": direction,
+        "navigable": navigable,
+        "display": display,
+        "source": source,
+    }
+    pos_scope = build_pos_scope(label)
+    if pos_scope:
+        edge["pos_scope"] = pos_scope
+    if primary:
+        edge["primary"] = True
+    return edge
+
+
+def append_relation_edge(target_map: dict[str, list[dict[str, Any]]],
+                         word_key: str,
+                         edge: dict[str, Any]) -> None:
+    edges = target_map.setdefault(word_key, [])
+    if edge not in edges:
+        edges.append(edge)
+
+
 def parse_pos_keys(pos_summary: str) -> set[str]:
     if not pos_summary:
         return set()
@@ -495,13 +735,15 @@ def classify_inflection_parent(entry: dict[str, Any], form_key: str) -> str | No
 def apply_relation_metadata(entry: dict[str, Any], *, entry_kind: str, display_word: str,
                             parent_relation: dict[str, str] | None,
                             child_relations: list[dict[str, str]],
-                            inflection_sources: list[dict[str, str]] | None = None) -> dict[str, Any]:
+                            inflection_sources: list[dict[str, str]] | None = None,
+                            relations: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     next_entry = {
         **entry,
         "entry_kind": entry_kind,
         "display_word": display_word,
         "parent_relation": parent_relation,
         "child_relations": child_relations,
+        "relations": relations or [],
     }
     if inflection_sources:
         next_entry["inflection_sources"] = inflection_sources
@@ -594,7 +836,6 @@ def filter_entry_pos_and_translation(entry: dict[str, Any], relation_label: str)
 
     result = dict(entry)
 
-    # Filter pos field
     pos = result.get("pos", "")
     if pos:
         filtered_parts = []
@@ -604,7 +845,6 @@ def filter_entry_pos_and_translation(entry: dict[str, Any], relation_label: str)
                 filtered_parts.append(part)
         result["pos"] = "/".join(filtered_parts)
 
-    # Filter translation field
     translation = result.get("translation", "")
     if translation:
         filtered_lines = []
@@ -615,6 +855,32 @@ def filter_entry_pos_and_translation(entry: dict[str, Any], relation_label: str)
                 if pos_key in allowed_pos:
                     filtered_lines.append(line)
         result["translation"] = "\n".join(filtered_lines)
+
+    translation_parts = result.get("translation_parts") or []
+    if translation_parts:
+        result["translation_parts"] = [
+            {"pos": part["pos"], "meanings": [*part["meanings"]]}
+            for part in translation_parts
+            if part.get("pos", "").rstrip(".") in allowed_pos and part.get("meanings")
+        ]
+
+    translation_detail_parts = result.get("translation_detail_parts") or []
+    if translation_detail_parts:
+        result["translation_detail_parts"] = [
+            {
+                "pos": part["pos"],
+                "details": [
+                    {
+                        "text": detail["text"],
+                        **({"countability": detail["countability"]} if detail.get("countability") else {}),
+                    }
+                    for detail in part.get("details", [])
+                    if detail.get("text")
+                ],
+            }
+            for part in translation_detail_parts
+            if part.get("pos", "").rstrip(".") in allowed_pos and part.get("details")
+        ]
 
     return result
 
@@ -630,6 +896,18 @@ def create_inflection_entry(form: str, parent_entry: dict[str, Any], relation_la
         display_word=parent_entry["word"],
         parent_relation=build_relation(parent_entry["word"], "原形"),
         child_relations=[],
+        relations=[
+            build_relation_edge(
+                relation_type="origin",
+                target=parent_entry["word"],
+                label=relation_label,
+                direction="outgoing",
+                navigable=True,
+                display="exchange",
+                source="derived",
+                primary=True,
+            )
+        ],
     )
 
 
@@ -671,12 +949,36 @@ def build_exchange_lines(exchange: str) -> list[str]:
     return parts
 
 
+def build_translation_parts(pos_data: dict[str, list[str]]) -> list[dict[str, Any]]:
+    return [
+        {"pos": f"{pos_norm}.", "meanings": [*meanings]}
+        for pos_norm, meanings in pos_data.items()
+        if meanings
+    ]
+
+
+def build_translation_detail_parts(pos_data: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "pos": f"{pos_norm}.",
+            "details": [
+                {
+                    "text": detail["text"],
+                    **({"countability": detail["countability"]} if detail.get("countability") else {}),
+                }
+                for detail in details
+            ],
+        }
+        for pos_norm, details in pos_data.items()
+        if details
+    ]
+
+
 def build_translation(pos_data: dict[str, list[str]]) -> str:
     lines = []
-    for pos_norm in ["v", "n", "adj", "adv", "int", "prep", "conj", "pron", "num"]:
-        if pos_norm in pos_data and pos_data[pos_norm]:
-            text = "，".join(pos_data[pos_norm])
-            lines.append(f"{pos_norm}. {text}")
+    for part in build_translation_parts(pos_data):
+        text = MEANING_JOINER.join(part["meanings"])
+        lines.append(f"{part['pos']} {text}")
     return "\n".join(lines)
 
 
@@ -685,9 +987,9 @@ def build_pos_freq(pos_data: dict[str, list[str]]) -> str:
     if total == 0:
         return ""
     parts = []
-    for pos_norm in ["v", "n", "adj", "adv", "int", "prep", "conj", "pron", "num"]:
-        if pos_norm in pos_data and pos_data[pos_norm]:
-            pct = round(len(pos_data[pos_norm]) / total * 100)
+    for pos_norm, meanings in pos_data.items():
+        if meanings:
+            pct = round(len(meanings) / total * 100)
             parts.append(f"{pos_norm}:{pct}")
     return "/".join(parts)
 
@@ -697,7 +999,12 @@ def parse_entry(html: str, word: str, lookup: dict[str, str] = {}) -> dict | Non
 
     phon_br, phon_us = extract_phonetic(soup)
 
-    cn_data = extract_meanings(soup)
+    meaning_items = extract_meaning_items(soup)
+    cn_data = {
+        pos_norm: [meaning["text"] for meaning in meanings]
+        for pos_norm, meanings in meaning_items.items()
+        if meanings
+    }
     if not cn_data:
         return None
 
@@ -712,6 +1019,8 @@ def parse_entry(html: str, word: str, lookup: dict[str, str] = {}) -> dict | Non
         exchange_values["s"] = [*exchange_values["3"]]
 
     exchange = serialize_exchange_values(exchange_values)
+    translation_parts = build_translation_parts(cn_data)
+    translation_detail_parts = build_translation_detail_parts(meaning_items)
     translation = build_translation(cn_data)
     phrasal_verbs = extract_phrasal_verbs(soup, lookup)
 
@@ -720,6 +1029,8 @@ def parse_entry(html: str, word: str, lookup: dict[str, str] = {}) -> dict | Non
         "phonetic": phon_br,
         "phonetic_us": phon_us,
         "translation": translation,
+        "translation_parts": translation_parts,
+        "translation_detail_parts": translation_detail_parts,
         "pos": pos,
         "exchange": exchange,
         "phrasal_verbs": phrasal_verbs,
@@ -809,6 +1120,7 @@ def main():
     print("Phase 2: Building relation metadata...")
     child_relations_map: dict[str, list[dict[str, str]]] = {}
     parent_relations_map: dict[str, list[dict[str, str]]] = {}
+    relation_edges_map: dict[str, list[dict[str, Any]]] = {}
     blocked_surface_forms_by_base: dict[str, set[str]] = {}
 
     for entry in standalone_cache.values():
@@ -825,12 +1137,27 @@ def main():
                 form_key = form.lower()
                 if form_key in blocked_forms:
                     continue
-                if not label or form_key == base_word:
+                if not label:
                     continue
                 child_relations_map.setdefault(base_word, [])
                 relation = build_relation(form, label)
                 if relation not in child_relations_map[base_word]:
                     child_relations_map[base_word].append(relation)
+                append_relation_edge(
+                    relation_edges_map,
+                    base_word,
+                    build_relation_edge(
+                        relation_type="inflection",
+                        target=form,
+                        label=label,
+                        direction="outgoing",
+                        navigable=True,
+                        display="exchange",
+                        source="exchange",
+                    ),
+                )
+                if form_key == base_word:
+                    continue
                 if entry.get("pos") and form_key not in parent_relations_map:
                     parent_relations_map[form_key] = [build_relation(entry["word"], "原形")]
                     parent_relations_map[form_key][0]["_inflection_label"] = label
@@ -864,35 +1191,54 @@ def main():
                     if word_key not in HOMOGRAPH_PROTECTED_FORMS:
                         parent_relation = primary_parent
 
-                        current_idx = EXCHANGE_DISPLAY_ORDER.index(current_form_key)
-                        allowed_later_keys = FORM_KEY_FAMILIES.get(current_form_key, set())
-                        for later_key in EXCHANGE_DISPLAY_ORDER[current_idx + 1 :]:
-                            if later_key not in allowed_later_keys:
-                                continue
-                            label = classify_inflection_parent(base_entry, later_key)
-                            if not label:
-                                continue
-                            for form in base_exchange.get(later_key, []):
-                                if form.lower() == word_key:
+                        is_shared_past_surface = (
+                            current_form_key in {"p", "d"}
+                            and word_key in [f.lower() for f in base_exchange.get("p", [])]
+                            and word_key in [f.lower() for f in base_exchange.get("d", [])]
+                        )
+                        if not is_shared_past_surface:
+                            current_idx = EXCHANGE_DISPLAY_ORDER.index(current_form_key)
+                            allowed_later_keys = FORM_KEY_FAMILIES.get(current_form_key, set())
+                            for later_key in EXCHANGE_DISPLAY_ORDER[current_idx + 1 :]:
+                                if later_key not in allowed_later_keys:
                                     continue
-                                # For irregular comparative/superlative forms, only link to
-                                # other irregular forms in the same suppletion path.
-                                if current_form_key in {"c", "sup"}:
-                                    lower_form = form.lower()
-                                    is_current_irregular = (
-                                        word_key in IRREGULAR_COMPARATIVE_FORMS
-                                        or word_key in IRREGULAR_SUPERLATIVE_FORMS
-                                    )
-                                    is_target_irregular = (
-                                        lower_form in IRREGULAR_COMPARATIVE_FORMS
-                                        or lower_form in IRREGULAR_SUPERLATIVE_FORMS
-                                    )
-                                    if is_current_irregular and not is_target_irregular:
+                                label = classify_inflection_parent(base_entry, later_key)
+                                if not label:
+                                    continue
+                                for form in base_exchange.get(later_key, []):
+                                    if form.lower() == word_key:
                                         continue
-                                relation = build_relation(form, label)
-                                existing = child_relations_map.get(word_key, [])
-                                if relation not in existing:
-                                    child_relations_map.setdefault(word_key, []).append(relation)
+                                    # For irregular comparative/superlative forms, only link to
+                                    # other irregular forms in the same suppletion path.
+                                    if current_form_key in {"c", "sup"}:
+                                        lower_form = form.lower()
+                                        is_current_irregular = (
+                                            word_key in IRREGULAR_COMPARATIVE_FORMS
+                                            or word_key in IRREGULAR_SUPERLATIVE_FORMS
+                                        )
+                                        is_target_irregular = (
+                                            lower_form in IRREGULAR_COMPARATIVE_FORMS
+                                            or lower_form in IRREGULAR_SUPERLATIVE_FORMS
+                                        )
+                                        if is_current_irregular and not is_target_irregular:
+                                            continue
+                                    relation = build_relation(form, label)
+                                    existing = child_relations_map.get(word_key, [])
+                                    if relation not in existing:
+                                        child_relations_map.setdefault(word_key, []).append(relation)
+                                    append_relation_edge(
+                                        relation_edges_map,
+                                        word_key,
+                                        build_relation_edge(
+                                            relation_type="inflection",
+                                            target=form,
+                                            label=label,
+                                            direction="outgoing",
+                                            navigable=True,
+                                            display="exchange",
+                                            source="derived",
+                                        ),
+                                    )
 
         # Strip internal metadata fields from parent_relation before serializing.
         clean_parent_relation = None
@@ -900,6 +1246,22 @@ def main():
             clean_parent_relation = {k: v for k, v in parent_relation.items() if not k.startswith("_")}
 
         inflection_sources = []
+        relations = [*relation_edges_map.get(word_key, [])]
+        if clean_parent_relation:
+            parent_label = primary_parent.get("_inflection_label", "原形") if potential_parents else "原形"
+            relations = [
+                build_relation_edge(
+                    relation_type="origin",
+                    target=clean_parent_relation["word"],
+                    label=parent_label,
+                    direction="outgoing",
+                    navigable=True,
+                    display="exchange",
+                    source="derived",
+                    primary=True,
+                ),
+                *relations,
+            ]
         if len(potential_parents) > 1:
             for pp in potential_parents:
                 labels = pp.get("_inflection_label", "")
@@ -907,6 +1269,43 @@ def main():
                     "word": pp["word"],
                     "label": labels,
                 })
+                append_relation_edge(
+                    relation_edges_map,
+                    word_key,
+                    build_relation_edge(
+                        relation_type="origin",
+                        target=pp["word"],
+                        label=labels,
+                        direction="outgoing",
+                        navigable=True,
+                        display="exchange",
+                        source="derived",
+                        primary=(pp is potential_parents[0]),
+                    ),
+                )
+            relations = [*relation_edges_map.get(word_key, [])]
+
+        cross_references = []
+        if word_key in HOMOGRAPH_PROTECTED_FORMS:
+            cross_references = [
+                {"word": base, "label": label}
+                for base, label in HOMOGRAPH_PROTECTED_FORMS[word_key]
+            ]
+            for base, label in HOMOGRAPH_PROTECTED_FORMS[word_key]:
+                append_relation_edge(
+                    relation_edges_map,
+                    word_key,
+                    build_relation_edge(
+                        relation_type="xref",
+                        target=base,
+                        label=label,
+                        direction="outgoing",
+                        navigable=True,
+                        display="reference",
+                        source="protected",
+                    ),
+                )
+            relations = [*relation_edges_map.get(word_key, [])]
 
         finalized_entries[word_key] = apply_relation_metadata(
             entry,
@@ -915,12 +1314,10 @@ def main():
             parent_relation=clean_parent_relation,
             child_relations=child_relations_map.get(word_key, []),
             inflection_sources=inflection_sources,
+            relations=relations,
         )
-        if word_key in HOMOGRAPH_PROTECTED_FORMS:
-            finalized_entries[word_key]["cross_references"] = [
-                {"word": base, "label": label}
-                for base, label in HOMOGRAPH_PROTECTED_FORMS[word_key]
-            ]
+        if cross_references:
+            finalized_entries[word_key]["cross_references"] = cross_references
 
     print("Phase 3: Processing link entries...")
     link_processed = 0
@@ -975,6 +1372,45 @@ def main():
         if inflection_label:
             source_entry = filter_entry_pos_and_translation(source_entry, inflection_label)
 
+        clean_parent_relation = {k: v for k, v in parent_relation.items() if not k.startswith("_")} if parent_relation else None
+        relations: list[dict[str, Any]] = []
+        inflection_sources: list[dict[str, str]] = []
+        if clean_parent_relation:
+            relation_label = inflection_label or "原形"
+            relations.append(
+                build_relation_edge(
+                    relation_type="origin",
+                    target=clean_parent_relation["word"],
+                    label=relation_label,
+                    direction="outgoing",
+                    navigable=True,
+                    display="exchange",
+                    source="derived",
+                    primary=True,
+                )
+            )
+
+        if len(potential_parents) > 1:
+            relations = []
+            for index, pp in enumerate(potential_parents):
+                label = pp.get("_inflection_label", "原形")
+                inflection_sources.append({
+                    "word": pp["word"],
+                    "label": label,
+                })
+                relations.append(
+                    build_relation_edge(
+                        relation_type="origin",
+                        target=pp["word"],
+                        label=label,
+                        direction="outgoing",
+                        navigable=True,
+                        display="exchange",
+                        source="derived",
+                        primary=(index == 0),
+                    )
+                )
+
         data = apply_relation_metadata(
             {
                 **source_entry,
@@ -983,8 +1419,10 @@ def main():
             },
             entry_kind=entry_kind,
             display_word=display_word,
-            parent_relation={k: v for k, v in parent_relation.items() if not k.startswith("_")} if parent_relation else None,
+            parent_relation=clean_parent_relation,
             child_relations=[],
+            inflection_sources=inflection_sources,
+            relations=relations,
         )
         finalized_entries[word_key] = data
         link_processed += 1
