@@ -488,21 +488,21 @@ test('batch morphology coverage spans 100+ words across relation categories', ()
   }
 })
 
-test('leaves has inflection_sources pointing to both leaf and leave', () => {
+test('leaves has inflection_sources with separate labels per relation', () => {
   const lDict = loadShard('l')
   const leaves = lDict.leaves
 
   assert.ok(leaves.inflection_sources, 'leaves should have inflection_sources')
-  assert.equal(leaves.inflection_sources.length >= 2, true, `leaves should have at least 2 inflection_sources, got: ${leaves.inflection_sources?.length || 0}`)
+  // leaf/复数 + leave/第三人称单数 + leave/复数 = 3 distinct sources
+  assert.equal(leaves.inflection_sources.length, 3, `leaves should have exactly 3 inflection_sources, got: ${leaves.inflection_sources?.length || 0}`)
 
-  const sourceWords = leaves.inflection_sources.map((s) => s.word)
-  assert.ok(sourceWords.includes('leaf'), `leaves inflection_sources should include leaf, got: ${sourceWords}`)
-  assert.ok(sourceWords.includes('leave'), `leaves inflection_sources should include leave, got: ${sourceWords}`)
+  const leafPlural = leaves.inflection_sources.find((s) => s.word === 'leaf' && s.label === '复数')
+  const leaveThirdPs = leaves.inflection_sources.find((s) => s.word === 'leave' && s.label === '第三人称单数')
+  const leavePlural = leaves.inflection_sources.find((s) => s.word === 'leave' && s.label === '复数')
 
-  const leafSource = leaves.inflection_sources.find((s) => s.word === 'leaf')
-  const leaveSource = leaves.inflection_sources.find((s) => s.word === 'leave')
-  assert.ok(leafSource.label.includes('复数'), `leaf source label should include 复数, got: ${leafSource?.label}`)
-  assert.ok(leaveSource.label.includes('第三人称单数') || leaveSource.label.includes('复数'), `leave source label should include 第三人称单数 or 复数, got: ${leaveSource?.label}`)
+  assert.ok(leafPlural, `leaves should have source leaf/复数`)
+  assert.ok(leaveThirdPs, `leaves should have source leave/第三人称单数`)
+  assert.ok(leavePlural, `leaves should have source leave/复数`)
 })
 
 test('batch irregular noun plurals preserve correct relations', () => {
