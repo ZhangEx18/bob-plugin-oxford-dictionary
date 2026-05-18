@@ -504,3 +504,105 @@ test('leaves has inflection_sources pointing to both leaf and leave', () => {
   assert.ok(leafSource.label.includes('复数'), `leaf source label should include 复数, got: ${leafSource?.label}`)
   assert.ok(leaveSource.label.includes('第三人称单数') || leaveSource.label.includes('复数'), `leave source label should include 第三人称单数 or 复数, got: ${leaveSource?.label}`)
 })
+
+test('batch irregular noun plurals preserve correct relations', () => {
+  const cases = [
+    { word: 'child', plural: 'children', baseLabel: '原形', pluralLabel: '复数' },
+    { word: 'leaf', plural: 'leaves', baseLabel: '原形', pluralLabel: '复数' },
+  ]
+  for (const { word, plural, baseLabel, pluralLabel } of cases) {
+    const entry = entryFor(word)
+    const pEntry = entryFor(plural)
+    assert.ok(entry, `${word} should exist`)
+    assert.ok(pEntry, `${plural} should exist`)
+    assert.equal(entry.entry_kind, 'standalone', `${word} should be standalone`)
+    // Homographic forms like "leaves" (both leaf plural and leave 3rd person) stay standalone
+    if (pEntry.inflection_sources) {
+      assert.equal(pEntry.entry_kind, 'standalone', `${plural} should be standalone (homographic inflection)`)
+      assert.ok(pEntry.inflection_sources.some((s) => s.word === word), `${plural} should have ${word} in inflection_sources`)
+    } else {
+      assert.equal(pEntry.entry_kind, 'inflection', `${plural} should be inflection`)
+      assert.deepEqual(pEntry.parent_relation, { word, label: baseLabel }, `${plural} parent should be ${word}`)
+    }
+    assert.ok(relationWords(entry.child_relations).includes(`${pluralLabel}:${plural}`), `${word} should have ${pluralLabel}:${plural}`)
+  }
+})
+
+test('batch irregular verb inflections preserve correct relations', () => {
+  const cases = [
+    { word: 'go', past: 'went', pastpart: 'gone', prespart: 'going' },
+    { word: 'fly', thirdps: 'flies', past: 'flew', pastpart: 'flown', prespart: 'flying' },
+    { word: 'run', thirdps: 'runs', past: 'ran', prespart: 'running' },
+  ]
+  for (const { word, thirdps, past, pastpart, prespart } of cases) {
+    const entry = entryFor(word)
+    assert.ok(entry, `${word} should exist`)
+    assert.equal(entry.entry_kind, 'standalone')
+    const childWords = relationWords(entry.child_relations)
+    if (thirdps) assert.ok(childWords.includes(`第三人称单数:${thirdps}`), `${word} should have 3rd person ${thirdps}`)
+    if (past) assert.ok(childWords.includes(`过去式:${past}`), `${word} should have past ${past}`)
+    if (pastpart) assert.ok(childWords.includes(`过去分词:${pastpart}`), `${word} should have past part ${pastpart}`)
+    if (prespart) assert.ok(childWords.includes(`现在分词:${prespart}`), `${word} should have pres part ${prespart}`)
+  }
+})
+
+test('batch comparative and superlative families preserve correct relations', () => {
+  const cases = [
+    { word: 'good', comparative: 'better', superlative: 'best' },
+    { word: 'bad', comparative: 'worse', superlative: 'worst' },
+    { word: 'well', comparative: 'better', superlative: 'best' },
+  ]
+  for (const { word, comparative, superlative } of cases) {
+    const entry = entryFor(word)
+    const cEntry = entryFor(comparative)
+    const sEntry = entryFor(superlative)
+    assert.ok(entry, `${word} should exist`)
+    assert.ok(cEntry, `${comparative} should exist`)
+    assert.ok(sEntry, `${superlative} should exist`)
+    assert.equal(entry.entry_kind, 'standalone')
+    assert.equal(cEntry.entry_kind, 'standalone')
+    assert.equal(sEntry.entry_kind, 'standalone')
+    // Shared irregular forms like better/best may point to a different primary parent
+    if (cEntry.parent_relation?.word === word) {
+      assert.deepEqual(cEntry.parent_relation, { word, label: '原形' })
+    }
+    if (sEntry.parent_relation?.word === word) {
+      assert.deepEqual(sEntry.parent_relation, { word, label: '原形' })
+    }
+    assert.ok(relationWords(entry.child_relations).includes(`比较级:${comparative}`))
+    assert.ok(relationWords(entry.child_relations).includes(`最高级:${superlative}`))
+  }
+})
+
+test('batch protected homographs stay standalone with cross-references', () => {
+  const cases = [
+    { word: 'found', xrefWord: 'find', xrefLabel: '过去式' },
+    { word: 'left', xrefWord: 'leave', xrefLabel: '过去式' },
+  ]
+  for (const { word, xrefWord, xrefLabel } of cases) {
+    const entry = entryFor(word)
+    assert.ok(entry, `${word} should exist`)
+    assert.equal(entry.entry_kind, 'standalone')
+    assert.equal(entry.parent_relation, null)
+    assert.ok(
+      relationWords(entry.cross_references || []).includes(`${xrefLabel}:${xrefWord}`),
+      `${word} should cross-reference ${xrefWord}, got: ${relationWords(entry.cross_references || [])}`,
+    )
+  }
+})
+
+test('batch inflection sources for homographic forms', () => {
+  const lDict = loadShard('l')
+  const cases = [
+    { word: 'leaves', expectedSources: ['leaf', 'leave'], minSources: 2 },
+  ]
+  for (const { word, expectedSources, minSources } of cases) {
+    const entry = lDict[word]
+    assert.ok(entry, `${word} should exist`)
+    assert.ok(entry.inflection_sources, `${word} should have inflection_sources`)
+    assert.ok(entry.inflection_sources.length >= minSources, `${word} should have at least ${minSources} inflection_sources, got: ${entry.inflection_sources.length}`)
+    for (const src of expectedSources) {
+      assert.ok(entry.inflection_sources.some((s) => s.word === src), `${word} should have inflection source ${src}`)
+    }
+  }
+})
