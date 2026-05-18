@@ -49,6 +49,16 @@ EXCHANGE_DISPLAY_LABELS = {
 }
 
 EXCHANGE_DISPLAY_ORDER = ["3", "p", "d", "i", "s", "c", "sup"]
+
+FORM_KEY_FAMILIES: dict[str, set[str]] = {
+    "3": {"3", "p", "d", "i"},
+    "p": {"3", "p", "d", "i"},
+    "d": {"3", "p", "d", "i"},
+    "i": {"3", "p", "d", "i"},
+    "s": {"s"},
+    "c": {"c", "sup"},
+    "sup": {"c", "sup"},
+}
 IRREGULAR_COMPARATIVE_FORMS = {"more", "less", "better", "worse", "farther", "further"}
 IRREGULAR_SUPERLATIVE_FORMS = {"most", "least", "best", "worst", "farthest", "furthest"}
 
@@ -642,7 +652,10 @@ def main():
                     parent_relation = potential_parent
 
                     current_idx = EXCHANGE_DISPLAY_ORDER.index(current_form_key)
+                    allowed_later_keys = FORM_KEY_FAMILIES.get(current_form_key, set())
                     for later_key in EXCHANGE_DISPLAY_ORDER[current_idx + 1 :]:
+                        if later_key not in allowed_later_keys:
+                            continue
                         label = classify_inflection_parent(base_entry, later_key)
                         if not label:
                             continue
