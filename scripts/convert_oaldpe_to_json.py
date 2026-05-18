@@ -81,6 +81,19 @@ INFLECTION_POS_FILTER: dict[str, set[str]] = {
     "最高级": {"adj", "adv"},
 }
 
+# Maps inflection relation labels to the exchange keys they are allowed to inherit.
+# None means keep all (used for the base form).
+LABEL_TO_EXCHANGE_KEY: dict[str, str | None] = {
+    "原形": None,
+    "第三人称单数": "3",
+    "过去式": "p",
+    "过去分词": "d",
+    "现在分词": "i",
+    "复数": "s",
+    "比较级": "c",
+    "最高级": "sup",
+}
+
 # Homograph forms that look like inflections of another word but are actually
 # standalone entries with their own independent meanings.
 # Value is a list of (base_word, label) tuples for cross-reference display.
@@ -882,6 +895,21 @@ def filter_entry_pos_and_translation(entry: dict[str, Any], relation_label: str)
             if part.get("pos", "").rstrip(".") in allowed_pos and part.get("details")
         ]
 
+    # Filter exchange to only keep slots relevant to this inflection label.
+    exchange = result.get("exchange", "")
+    if exchange:
+        allowed_keys: set[str] | None = set()
+        for label in relation_label.split(","):
+            key = LABEL_TO_EXCHANGE_KEY.get(label)
+            if key is None:
+                allowed_keys = None
+                break
+            allowed_keys.add(key)
+        if allowed_keys is not None:
+            values = parse_exchange_values(exchange)
+            filtered_values = {k: v for k, v in values.items() if k in allowed_keys}
+            result["exchange"] = serialize_exchange_values(filtered_values)
+
     return result
 
 
@@ -1364,7 +1392,15 @@ def main():
         entry_kind = "inflection" if parent_relation else "alias"
         inflection_label = None
         if parent_relation:
-            inflection_label = parent_relation.get("_inflection_label")
+            if len(potential_parents) > 1:
+                labels = [
+                    pp.get("_inflection_label", "")
+                    for pp in potential_parents
+                    if pp.get("_inflection_label")
+                ]
+                inflection_label = ",".join(labels) if labels else None
+            else:
+                inflection_label = parent_relation.get("_inflection_label")
             # If no _inflection_label, it came from find_standalone_plural_parent
             if not inflection_label:
                 inflection_label = "复数"

@@ -306,6 +306,9 @@ test('scripts aggregates countable noun plural senses and verb third-person sens
 
   const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
   assert.equal(exchangeRows.filter((row) => row === '原形:script').length, 1, `scripts should show one root exchange, got: ${JSON.stringify(result.toDict.exchanges)}`)
+  assert.ok(!exchangeRows.includes('现在分词:scripting'), `scripts should NOT show scripting as pres part, got: ${JSON.stringify(result.toDict.exchanges)}`)
+  assert.ok(!exchangeRows.includes('过去式:scripted'), `scripts should NOT show scripted as past tense, got: ${JSON.stringify(result.toDict.exchanges)}`)
+  assert.ok(!exchangeRows.includes('过去分词:scripted'), `scripts should NOT show scripted as past part, got: ${JSON.stringify(result.toDict.exchanges)}`)
 })
 
 test('batch irregular verb inflections render correct exchanges at runtime', async () => {

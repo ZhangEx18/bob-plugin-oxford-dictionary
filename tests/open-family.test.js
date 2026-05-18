@@ -529,6 +529,43 @@ test('leaves has inflection_sources with separate labels per relation', () => {
   assert.ok(originPosScopes.includes('复数:leave:n'), `leaves origin should preserve noun scope for leave plural, got: ${originPosScopes}`)
 })
 
+test('scripts inflection entry carries only its own exchange slots, not parent verb timeline', () => {
+  const sDict = loadShard('s')
+  const scripts = sDict.scripts
+
+  assert.ok(scripts, 'scripts should exist in dict')
+  assert.equal(scripts.entry_kind, 'inflection', `scripts should be inflection, got: ${scripts.entry_kind}`)
+
+  // exchange should only contain 3 and s slots, not p/d/i
+  const exchangeValues = (scripts.exchange || '')
+    .split('/')
+    .reduce((map, item) => {
+      const [key, value] = item.split(':', 2)
+      if (key && value) {
+        const values = map.get(key) || []
+        map.set(key, [...values, value])
+      }
+      return map
+    }, new Map())
+
+  assert.ok(exchangeValues.has('3'), `scripts exchange should have 3 slot, got: ${scripts.exchange}`)
+  assert.ok(exchangeValues.has('s'), `scripts exchange should have s slot, got: ${scripts.exchange}`)
+  assert.ok(!exchangeValues.has('p'), `scripts exchange should NOT have p slot, got: ${scripts.exchange}`)
+  assert.ok(!exchangeValues.has('d'), `scripts exchange should NOT have d slot, got: ${scripts.exchange}`)
+  assert.ok(!exchangeValues.has('i'), `scripts exchange should NOT have i slot, got: ${scripts.exchange}`)
+
+  // relations should only be origin edges pointing back to script
+  const relationTypes = (scripts.relations || []).map((r) => r.type)
+  assert.ok(relationTypes.includes('origin'), `scripts should have origin relations`)
+  assert.ok(!relationTypes.includes('inflection'), `scripts should NOT have inflection relations`)
+
+  // should have both noun and verb origin sources
+  assert.ok(scripts.inflection_sources, 'scripts should have inflection_sources')
+  const sourceLabels = scripts.inflection_sources.map((s) => s.label)
+  assert.ok(sourceLabels.includes('第三人称单数'), `scripts should have 第三人称单数 source, got: ${sourceLabels}`)
+  assert.ok(sourceLabels.includes('复数'), `scripts should have 复数 source, got: ${sourceLabels}`)
+})
+
 test('batch irregular noun plurals preserve correct relations', () => {
   const cases = [
     { word: 'child', plural: 'children', baseLabel: '原形', pluralLabel: '复数' },
