@@ -208,7 +208,7 @@ test('standalone suppletive forms link back to base and forward to subsequent fo
   assert.equal(wDict.worse.entry_kind, 'standalone')
   assert.deepEqual(wDict.worse.parent_relation, { word: 'bad', label: '原形' })
   assert.ok(relationWords(wDict.worse.child_relations).includes('最高级:worst'), `worse should link forward to worst, got: ${relationWords(wDict.worse.child_relations)}`)
-  assert.ok(relationWords(wDict.worse.child_relations).includes('最高级:baddest'), `worse should link forward to baddest, got: ${relationWords(wDict.worse.child_relations)}`)
+  assert.ok(!relationWords(wDict.worse.child_relations).includes('最高级:baddest'), `worse should NOT link to baddest (different inflection path), got: ${relationWords(wDict.worse.child_relations)}`)
 
   // better (standalone comparative of good)
   assert.equal(bDict.better.entry_kind, 'standalone')

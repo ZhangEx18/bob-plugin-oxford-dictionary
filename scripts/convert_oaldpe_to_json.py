@@ -662,6 +662,20 @@ def main():
                         for form in base_exchange.get(later_key, []):
                             if form.lower() == word_key:
                                 continue
+                            # For irregular comparative/superlative forms, only link to
+                            # other irregular forms in the same suppletion path.
+                            if current_form_key in {"c", "sup"}:
+                                lower_form = form.lower()
+                                is_current_irregular = (
+                                    word_key in IRREGULAR_COMPARATIVE_FORMS
+                                    or word_key in IRREGULAR_SUPERLATIVE_FORMS
+                                )
+                                is_target_irregular = (
+                                    lower_form in IRREGULAR_COMPARATIVE_FORMS
+                                    or lower_form in IRREGULAR_SUPERLATIVE_FORMS
+                                )
+                                if is_current_irregular and not is_target_irregular:
+                                    continue
                             relation = build_relation(form, label)
                             existing = child_relations_map.get(word_key, [])
                             if relation not in existing:
