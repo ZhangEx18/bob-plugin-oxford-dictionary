@@ -253,3 +253,22 @@ test('batch protected homographs render cross-references at runtime', async () =
     assert.ok(exchanges.includes(`原形:${xref}`), `${word} should show cross-reference to ${xref}, got: ${JSON.stringify(result.toDict.exchanges)}`)
   }
 })
+
+test('batch homographs with multiple POS render all parts at runtime', async () => {
+  const cases = [
+    { word: 'spring', expectedParts: ['n.', 'v.'] },
+    { word: 'light', expectedParts: ['n.', 'v.', 'adj.'] },
+    { word: 'match', expectedParts: ['n.', 'v.'] },
+    { word: 'object', expectedParts: ['n.', 'v.'] },
+    { word: 'present', expectedParts: ['n.', 'v.', 'adj.'] },
+    { word: 'record', expectedParts: ['n.', 'v.'] },
+    { word: 'address', expectedParts: ['n.', 'v.'] },
+  ]
+  for (const { word, expectedParts } of cases) {
+    const result = await runTranslate(word)
+    const partNames = result.toDict.parts.map((p) => p.part)
+    for (const part of expectedParts) {
+      assert.ok(partNames.includes(part), `${word} should have ${part} part, got: ${partNames}`)
+    }
+  }
+})
