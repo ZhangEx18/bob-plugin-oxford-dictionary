@@ -205,3 +205,51 @@ test('leaves aggregates parts from both leaf and leave inflection sources', asyn
     `verb means should reference leave third-person singular, got: ${verbMeans}`,
   )
 })
+
+test('batch irregular verb inflections render correct exchanges at runtime', async () => {
+  const cases = [
+    { word: 'go', past: ['went'], pastpart: ['gone'], prespart: ['going'] },
+    { word: 'fly', thirdps: ['flies'], past: ['flew'], pastpart: ['flown'], prespart: ['flying'] },
+    { word: 'run', thirdps: ['runs'], past: ['ran'], prespart: ['running'] },
+  ]
+  for (const { word, thirdps, past, pastpart, prespart } of cases) {
+    const result = await runTranslate(word)
+    const exchangeMap = new Map(result.toDict.exchanges.map((item) => [item.name, item.words]))
+    if (thirdps) assert.deepEqual([...exchangeMap.get('第三人称单数')], thirdps, `${word} 3rd person mismatch`)
+    if (past) assert.deepEqual([...exchangeMap.get('过去式')], past, `${word} past tense mismatch`)
+    if (pastpart) assert.deepEqual([...exchangeMap.get('过去分词')], pastpart, `${word} past part mismatch`)
+    if (prespart) assert.deepEqual([...exchangeMap.get('现在分词')], prespart, `${word} pres part mismatch`)
+  }
+})
+
+test('batch comparative and superlative forms render correct exchanges', async () => {
+  const cases = [
+    { word: 'good', comparative: ['better'], superlative: ['best'] },
+    { word: 'bad', comparative: ['worse', 'badder'], superlative: ['worst', 'baddest'] },
+    { word: 'well', comparative: ['better'], superlative: ['best'] },
+  ]
+  for (const { word, comparative, superlative } of cases) {
+    const result = await runTranslate(word)
+    const exchangeMap = new Map(result.toDict.exchanges.map((item) => [item.name, item.words]))
+    const compWords = exchangeMap.get('比较级') || []
+    const supWords = exchangeMap.get('最高级') || []
+    for (const form of comparative) {
+      assert.ok(compWords.includes(form), `${word} comparative should include ${form}`)
+    }
+    for (const form of superlative) {
+      assert.ok(supWords.includes(form), `${word} superlative should include ${form}`)
+    }
+  }
+})
+
+test('batch protected homographs render cross-references at runtime', async () => {
+  const cases = [
+    { word: 'found', xref: 'find' },
+    { word: 'left', xref: 'leave' },
+  ]
+  for (const { word, xref } of cases) {
+    const result = await runTranslate(word)
+    const exchanges = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
+    assert.ok(exchanges.includes(`原形:${xref}`), `${word} should show cross-reference to ${xref}, got: ${JSON.stringify(result.toDict.exchanges)}`)
+  }
+})
