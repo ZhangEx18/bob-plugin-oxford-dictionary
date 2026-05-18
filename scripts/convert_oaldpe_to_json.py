@@ -286,6 +286,65 @@ def classify_surface_s_relations(entry: dict[str, Any]) -> tuple[bool, set[str]]
     return allow_relation, blocked_forms
 
 
+def is_regular_inflection(base_word: str, form: str, form_key: str) -> bool:
+    """Check if form is a regular inflection of base_word."""
+    base = base_word.lower()
+    f = form.lower()
+
+    if f == base:
+        return True
+
+    if form_key == "s":
+        return f in {base + "s", base + "es"}
+
+    if form_key == "3":
+        return f in {base + "s", base + "es"}
+
+    if form_key == "i":
+        if f == base + "ing":
+            return True
+        if base.endswith("e") and f == base[:-1] + "ing":
+            return True
+        if len(base) >= 3 and base[-1] not in "aeiou" and base[-2] in "aeiou" and base[-3] not in "aeiouy" and f == base + base[-1] + "ing":
+            return True
+        return False
+
+    if form_key == "c":
+        if f == base + "er":
+            return True
+        if base.endswith("e") and f == base + "r":
+            return True
+        if len(base) >= 3 and base[-1] not in "aeiou" and base[-2] in "aeiou" and base[-3] not in "aeiouy" and f == base + base[-1] + "er":
+            return True
+        if base.endswith("y") and f == base[:-1] + "ier":
+            return True
+        return False
+
+    if form_key == "sup":
+        if f == base + "est":
+            return True
+        if base.endswith("e") and f == base + "st":
+            return True
+        if len(base) >= 3 and base[-1] not in "aeiou" and base[-2] in "aeiou" and base[-3] not in "aeiouy" and f == base + base[-1] + "est":
+            return True
+        if base.endswith("y") and f == base[:-1] + "iest":
+            return True
+        return False
+
+    if form_key in {"p", "d"}:
+        if f == base + "ed":
+            return True
+        if base.endswith("e") and f == base + "d":
+            return True
+        if len(base) >= 3 and base[-1] not in "aeiou" and base[-2] in "aeiou" and base[-3] not in "aeiouy" and f == base + base[-1] + "ed":
+            return True
+        if base.endswith("y") and f == base[:-1] + "ied":
+            return True
+        return False
+
+    return False
+
+
 def classify_inflection_parent(entry: dict[str, Any], form_key: str) -> str | None:
     pos_keys = parse_pos_keys(entry.get("pos", ""))
     if not pos_keys:
@@ -564,11 +623,42 @@ def main():
 
     finalized_entries: dict[str, dict[str, Any]] = {}
     for word_key, entry in standalone_cache.items():
+        parent_relation = None
+        potential_parent = parent_relations_map.get(word_key)
+
+        if potential_parent:
+            base_word = potential_parent["word"].lower()
+            base_entry = standalone_cache.get(base_word)
+            if base_entry:
+                base_exchange = parse_exchange_values(base_entry.get("exchange", ""))
+                current_form_key = None
+                for key in EXCHANGE_DISPLAY_ORDER:
+                    forms = base_exchange.get(key, [])
+                    if word_key in [f.lower() for f in forms]:
+                        current_form_key = key
+                        break
+
+                if current_form_key and not is_regular_inflection(base_word, word_key, current_form_key):
+                    parent_relation = potential_parent
+
+                    current_idx = EXCHANGE_DISPLAY_ORDER.index(current_form_key)
+                    for later_key in EXCHANGE_DISPLAY_ORDER[current_idx + 1 :]:
+                        label = classify_inflection_parent(base_entry, later_key)
+                        if not label:
+                            continue
+                        for form in base_exchange.get(later_key, []):
+                            if form.lower() == word_key:
+                                continue
+                            relation = build_relation(form, label)
+                            existing = child_relations_map.get(word_key, [])
+                            if relation not in existing:
+                                child_relations_map.setdefault(word_key, []).append(relation)
+
         finalized_entries[word_key] = apply_relation_metadata(
             entry,
             entry_kind="standalone",
             display_word=entry["word"],
-            parent_relation=None,
+            parent_relation=parent_relation,
             child_relations=child_relations_map.get(word_key, []),
         )
 
