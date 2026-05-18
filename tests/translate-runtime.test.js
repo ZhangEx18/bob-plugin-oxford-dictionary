@@ -170,3 +170,38 @@ test('protected homographs show cross-references at runtime instead of parent li
   const leftExchanges = left.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
   assert.ok(leftExchanges.includes('原形:leave'), `left should show cross-reference to leave, got: ${JSON.stringify(left.toDict.exchanges)}`)
 })
+
+test('leaves aggregates parts from both leaf and leave inflection sources', async () => {
+  const result = await runTranslate('leaves')
+
+  // Should show leaves as a standalone entry with its own phonetics
+  assert.equal(result.toDict.word, 'leaves')
+  assert.ok(result.toDict.phonetics.length > 0, 'leaves should have phonetics')
+
+  // Parts should include both leaf's noun meanings and leave's verb meanings
+  const parts = result.toDict.parts
+  assert.ok(parts.length >= 2, `leaves should have at least 2 parts, got: ${parts.length}`)
+
+  // Aggregate all means for each part (there may be multiple n./v. entries)
+  const partMap = new Map()
+  for (const p of parts) {
+    const existing = partMap.get(p.part) || []
+    partMap.set(p.part, existing.concat(p.means))
+  }
+
+  // Should have noun part from leaf
+  assert.ok(partMap.has('n.'), `leaves should have noun part, got: ${[...partMap.keys()]}`)
+  const nounMeans = partMap.get('n.') || []
+  assert.ok(
+    nounMeans.some((m) => m.includes('leaf') && m.includes('复数')),
+    `noun means should reference leaf plural, got: ${nounMeans}`,
+  )
+
+  // Should have verb part from leave
+  assert.ok(partMap.has('v.'), `leaves should have verb part, got: ${[...partMap.keys()]}`)
+  const verbMeans = partMap.get('v.') || []
+  assert.ok(
+    verbMeans.some((m) => m.includes('leave') && (m.includes('第三人称单数') || m.includes('复数'))),
+    `verb means should reference leave third-person singular, got: ${verbMeans}`,
+  )
+})

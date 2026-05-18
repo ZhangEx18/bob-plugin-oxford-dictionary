@@ -494,7 +494,8 @@ def classify_inflection_parent(entry: dict[str, Any], form_key: str) -> str | No
 
 def apply_relation_metadata(entry: dict[str, Any], *, entry_kind: str, display_word: str,
                             parent_relation: dict[str, str] | None,
-                            child_relations: list[dict[str, str]]) -> dict[str, Any]:
+                            child_relations: list[dict[str, str]],
+                            inflection_sources: list[dict[str, str]] | None = None) -> dict[str, Any]:
     next_entry = {
         **entry,
         "entry_kind": entry_kind,
@@ -502,6 +503,8 @@ def apply_relation_metadata(entry: dict[str, Any], *, entry_kind: str, display_w
         "parent_relation": parent_relation,
         "child_relations": child_relations,
     }
+    if inflection_sources:
+        next_entry["inflection_sources"] = inflection_sources
     return next_entry
 
 
@@ -805,7 +808,7 @@ def main():
 
     print("Phase 2: Building relation metadata...")
     child_relations_map: dict[str, list[dict[str, str]]] = {}
-    parent_relations_map: dict[str, dict[str, str]] = {}
+    parent_relations_map: dict[str, list[dict[str, str]]] = {}
     blocked_surface_forms_by_base: dict[str, set[str]] = {}
 
     for entry in standalone_cache.values():
@@ -829,20 +832,31 @@ def main():
                 if relation not in child_relations_map[base_word]:
                     child_relations_map[base_word].append(relation)
                 if entry.get("pos") and form_key not in parent_relations_map:
-                    parent_relations_map[form_key] = build_relation(entry["word"], "原形")
-                    parent_relations_map[form_key]["_inflection_label"] = label
+                    parent_relations_map[form_key] = [build_relation(entry["word"], "原形")]
+                    parent_relations_map[form_key][0]["_inflection_label"] = label
                 elif entry.get("pos") and form_key in parent_relations_map:
-                    existing = parent_relations_map[form_key].get("_inflection_label", "")
-                    if existing and label not in existing.split(","):
-                        parent_relations_map[form_key]["_inflection_label"] = f"{existing},{label}"
+                    existing_relation = None
+                    for r in parent_relations_map[form_key]:
+                        if r["word"].lower() == entry["word"].lower():
+                            existing_relation = r
+                            break
+                    if existing_relation:
+                        existing_labels = existing_relation.get("_inflection_label", "")
+                        if label not in existing_labels.split(","):
+                            existing_relation["_inflection_label"] = f"{existing_labels},{label}" if existing_labels else label
+                    else:
+                        new_relation = build_relation(entry["word"], "原形")
+                        new_relation["_inflection_label"] = label
+                        parent_relations_map[form_key].append(new_relation)
 
     finalized_entries: dict[str, dict[str, Any]] = {}
     for word_key, entry in standalone_cache.items():
         parent_relation = None
-        potential_parent = parent_relations_map.get(word_key)
+        potential_parents = parent_relations_map.get(word_key, [])
 
-        if potential_parent:
-            base_word = potential_parent["word"].lower()
+        if potential_parents:
+            primary_parent = potential_parents[0]
+            base_word = primary_parent["word"].lower()
             base_entry = standalone_cache.get(base_word)
             if base_entry:
                 base_exchange = parse_exchange_values(base_entry.get("exchange", ""))
@@ -855,7 +869,7 @@ def main():
 
                 if current_form_key and not is_regular_inflection(base_word, word_key, current_form_key):
                     if word_key not in HOMOGRAPH_PROTECTED_FORMS:
-                        parent_relation = potential_parent
+                        parent_relation = primary_parent
 
                         current_idx = EXCHANGE_DISPLAY_ORDER.index(current_form_key)
                         allowed_later_keys = FORM_KEY_FAMILIES.get(current_form_key, set())
@@ -892,12 +906,22 @@ def main():
         if parent_relation:
             clean_parent_relation = {k: v for k, v in parent_relation.items() if not k.startswith("_")}
 
+        inflection_sources = []
+        if len(potential_parents) > 1:
+            for pp in potential_parents:
+                labels = pp.get("_inflection_label", "")
+                inflection_sources.append({
+                    "word": pp["word"],
+                    "label": labels,
+                })
+
         finalized_entries[word_key] = apply_relation_metadata(
             entry,
             entry_kind="standalone",
             display_word=entry["word"],
             parent_relation=clean_parent_relation,
             child_relations=child_relations_map.get(word_key, []),
+            inflection_sources=inflection_sources,
         )
         if word_key in HOMOGRAPH_PROTECTED_FORMS:
             finalized_entries[word_key]["cross_references"] = [
@@ -920,7 +944,8 @@ def main():
             link_skipped += 1
             continue
 
-        parent_relation = parent_relations_map.get(word_key)
+        potential_parents = parent_relations_map.get(word_key, [])
+        parent_relation = potential_parents[0] if potential_parents else None
         display_word = target_entry["word"]
         source_entry = target_entry
         target_blocked_forms = blocked_surface_forms_by_base.get(target_key, set())
