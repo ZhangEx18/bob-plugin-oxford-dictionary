@@ -606,3 +606,52 @@ test('batch inflection sources for homographic forms', () => {
     }
   }
 })
+
+test('batch homographs with multiple POS stay standalone without parent relations', () => {
+  const cases = [
+    { word: 'spring', expectedPos: new Set(['v', 'n']) },
+    { word: 'light', expectedPos: new Set(['v', 'n', 'adj']) },
+    { word: 'sound', expectedPos: new Set(['v', 'n', 'adj', 'adv']) },
+    { word: 'close', expectedPos: new Set(['v', 'n', 'adj', 'adv']) },
+    { word: 'match', expectedPos: new Set(['v', 'n']) },
+    { word: 'round', expectedPos: new Set(['v', 'n', 'adj', 'adv', 'prep']) },
+    { word: 'watch', expectedPos: new Set(['v', 'n']) },
+    { word: 'object', expectedPos: new Set(['v', 'n']) },
+    { word: 'present', expectedPos: new Set(['v', 'n', 'adj']) },
+    { word: 'content', expectedPos: new Set(['v', 'n', 'adj']) },
+    { word: 'desert', expectedPos: new Set(['v', 'n']) },
+    { word: 'refuse', expectedPos: new Set(['v', 'n']) },
+    { word: 'permit', expectedPos: new Set(['v', 'n']) },
+    { word: 'subject', expectedPos: new Set(['v', 'n', 'adj']) },
+    { word: 'contract', expectedPos: new Set(['v', 'n']) },
+    { word: 'record', expectedPos: new Set(['v', 'n']) },
+    { word: 'address', expectedPos: new Set(['v', 'n']) },
+  ]
+  for (const { word, expectedPos } of cases) {
+    const entry = entryFor(word)
+    assert.ok(entry, `${word} should exist`)
+    assert.equal(entry.entry_kind, 'standalone', `${word} should be standalone`)
+    assert.equal(entry.parent_relation, null, `${word} should not have parent_relation`)
+    const actualPos = posKeys(entry)
+    for (const pos of expectedPos) {
+      assert.ok(actualPos.has(pos), `${word} should have ${pos} POS, got: ${[...actualPos]}`)
+    }
+  }
+})
+
+test('batch protected homographs with cross-references include ground and bound', () => {
+  const cases = [
+    { word: 'ground', xrefWord: 'grind', xrefLabel: '过去式' },
+    { word: 'bound', xrefWord: 'bind', xrefLabel: '过去式' },
+  ]
+  for (const { word, xrefWord, xrefLabel } of cases) {
+    const entry = entryFor(word)
+    assert.ok(entry, `${word} should exist`)
+    assert.equal(entry.entry_kind, 'standalone')
+    assert.equal(entry.parent_relation, null)
+    assert.ok(
+      relationWords(entry.cross_references || []).includes(`${xrefLabel}:${xrefWord}`),
+      `${word} should cross-reference ${xrefWord}, got: ${relationWords(entry.cross_references || [])}`,
+    )
+  }
+})
