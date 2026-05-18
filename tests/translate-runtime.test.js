@@ -178,6 +178,12 @@ test('leaves aggregates parts from both leaf and leave inflection sources', asyn
   assert.equal(result.toDict.word, 'leaves')
   assert.ok(result.toDict.phonetics.length > 0, 'leaves should have phonetics')
 
+  // Exchange bar should show both source words as 原形
+  const exchangeMap = new Map(result.toDict.exchanges.map((item) => [item.name, item.words]))
+  const rootWords = exchangeMap.get('原形') || []
+  assert.ok(rootWords.includes('leaf'), `leaves exchanges should include leaf as 原形, got: ${rootWords}`)
+  assert.ok(rootWords.includes('leave'), `leaves exchanges should include leave as 原形, got: ${rootWords}`)
+
   // Parts should include both leaf's noun meanings and leave's verb meanings
   const parts = result.toDict.parts
   assert.ok(parts.length >= 2, `leaves should have at least 2 parts, got: ${parts.length}`)
@@ -189,7 +195,7 @@ test('leaves aggregates parts from both leaf and leave inflection sources', asyn
     partMap.set(p.part, existing.concat(p.means))
   }
 
-  // Should have noun part from leaf
+  // Should have noun part from leaf (复数 → only n. POS allowed)
   assert.ok(partMap.has('n.'), `leaves should have noun part, got: ${[...partMap.keys()]}`)
   const nounMeans = partMap.get('n.') || []
   assert.ok(
@@ -197,12 +203,18 @@ test('leaves aggregates parts from both leaf and leave inflection sources', asyn
     `noun means should reference leaf plural, got: ${nounMeans}`,
   )
 
-  // Should have verb part from leave
+  // Should have verb part from leave (第三人称单数 → only v. POS allowed)
   assert.ok(partMap.has('v.'), `leaves should have verb part, got: ${[...partMap.keys()]}`)
   const verbMeans = partMap.get('v.') || []
   assert.ok(
-    verbMeans.some((m) => m.includes('leave') && (m.includes('第三人称单数') || m.includes('复数'))),
-    `verb means should reference leave third-person singular, got: ${verbMeans}`,
+    verbMeans.some((m) => m.includes('leave') && m.includes('第三人称单数')),
+    `verb means should reference leave 第三人称单数, got: ${verbMeans}`,
+  )
+
+  // Should NOT have verb means labeled as 复数 (POS filtering must separate labels)
+  assert.ok(
+    !verbMeans.some((m) => m.includes('leave') && m.includes('复数')),
+    `verb means should NOT include leave 复数, got: ${verbMeans}`,
   )
 })
 

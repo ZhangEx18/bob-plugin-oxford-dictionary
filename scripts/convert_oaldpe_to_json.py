@@ -835,19 +835,12 @@ def main():
                     parent_relations_map[form_key] = [build_relation(entry["word"], "原形")]
                     parent_relations_map[form_key][0]["_inflection_label"] = label
                 elif entry.get("pos") and form_key in parent_relations_map:
-                    existing_relation = None
-                    for r in parent_relations_map[form_key]:
-                        if r["word"].lower() == entry["word"].lower():
-                            existing_relation = r
-                            break
-                    if existing_relation:
-                        existing_labels = existing_relation.get("_inflection_label", "")
-                        if label not in existing_labels.split(","):
-                            existing_relation["_inflection_label"] = f"{existing_labels},{label}" if existing_labels else label
-                    else:
-                        new_relation = build_relation(entry["word"], "原形")
-                        new_relation["_inflection_label"] = label
-                        parent_relations_map[form_key].append(new_relation)
+                    # Create a separate relation for each label so that homographic
+                    # forms like "leaves" (both 3rd person singular and plural of
+                    # "leave") get distinct inflection_sources entries.
+                    new_relation = build_relation(entry["word"], "原形")
+                    new_relation["_inflection_label"] = label
+                    parent_relations_map[form_key].append(new_relation)
 
     finalized_entries: dict[str, dict[str, Any]] = {}
     for word_key, entry in standalone_cache.items():

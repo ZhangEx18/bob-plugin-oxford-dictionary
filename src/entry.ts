@@ -213,6 +213,18 @@ function buildMorphologyExchanges(view: EntryView): Bob.ExchangeObject[] {
     morphologyByLabel.set(relation.label, [...items, { label: relation.label, word: relation.word }]);
   }
 
+  // For homographic forms with no single parent (e.g. "leaves"), add all
+  // inflection_sources as "原形" links so the exchange bar shows every source.
+  if (!view.entry.parent_relation) {
+    for (const source of view.entry.inflection_sources || []) {
+      const key = `原形:${normalizeMorphologyWord(source.word)}`;
+      if (seenMorphologyKeys.has(key)) continue;
+      seenMorphologyKeys.add(key);
+      const items = morphologyByLabel.get("原形") || [];
+      morphologyByLabel.set("原形", [...items, { label: "原形", word: source.word }]);
+    }
+  }
+
   const orderedLabels = ["原形", "复数", "第三人称单数", "现在分词", "过去式", "过去分词", "比较级", "最高级"];
 
   const exchanges = orderedLabels.flatMap((label) => {
