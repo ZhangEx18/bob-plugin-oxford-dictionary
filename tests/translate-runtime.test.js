@@ -305,7 +305,10 @@ test('scripts aggregates countable noun plural senses and verb third-person sens
   assert.deepEqual(verbPart.means, ['为(电影或戏剧等)写剧本\n[script 的 第三人称单数]'])
 
   const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
-  assert.equal(exchangeRows.filter((row) => row === '原形:script').length, 1, `scripts should show one root exchange, got: ${JSON.stringify(result.toDict.exchanges)}`)
+  assert.equal(exchangeRows.length, 1, `scripts as inflection entry should only show back-navigation, got: ${JSON.stringify(result.toDict.exchanges)}`)
+  assert.equal(exchangeRows[0], '原形:script')
+  assert.ok(!exchangeRows.includes('复数:scripts'), `scripts should NOT show itself as plural, got: ${JSON.stringify(result.toDict.exchanges)}`)
+  assert.ok(!exchangeRows.includes('第三人称单数:scripts'), `scripts should NOT show itself as 3rd person, got: ${JSON.stringify(result.toDict.exchanges)}`)
   assert.ok(!exchangeRows.includes('现在分词:scripting'), `scripts should NOT show scripting as pres part, got: ${JSON.stringify(result.toDict.exchanges)}`)
   assert.ok(!exchangeRows.includes('过去式:scripted'), `scripts should NOT show scripted as past tense, got: ${JSON.stringify(result.toDict.exchanges)}`)
   assert.ok(!exchangeRows.includes('过去分词:scripted'), `scripts should NOT show scripted as past part, got: ${JSON.stringify(result.toDict.exchanges)}`)
