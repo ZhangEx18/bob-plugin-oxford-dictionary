@@ -18,6 +18,7 @@ interface DictEntry {
   display_word?: string;
   parent_relation?: WordRelation | null;
   child_relations?: WordRelation[];
+  cross_references?: WordRelation[];
 }
 
 interface ShardCache {
@@ -117,7 +118,7 @@ function parseParts(translation: string): Bob.PartObject[] {
 function parseExchanges(exchange: string): Bob.ExchangeObject[] {
   const values = parseExchangeValues(exchange);
   const exchanges: Bob.ExchangeObject[] = [];
-  const order = ["s", "3", "i", "p", "d", "c", "sup"];
+  const order = ["3", "p", "d", "i", "s", "c", "sup"];
 
   for (const key of order) {
     const label = exchangeLabelMap[key];
@@ -141,6 +142,22 @@ function pickPrimaryMorphologyWord(words: string[]): string[] {
   const preferredPairs: Array<[string, string]> = [
     ["travelled", "traveled"],
     ["travelling", "traveling"],
+    ["cancelled", "canceled"],
+    ["cancelling", "canceling"],
+    ["levelled", "leveled"],
+    ["levelling", "leveling"],
+    ["signalled", "signaled"],
+    ["signalling", "signaling"],
+    ["labelled", "labeled"],
+    ["labelling", "labeling"],
+    ["fuelled", "fueled"],
+    ["fuelling", "fueling"],
+    ["totalled", "totaled"],
+    ["totalling", "totaling"],
+    ["kidnapped", "kidnaped"],
+    ["kidnapping", "kidnaping"],
+    ["worshipped", "worshiped"],
+    ["worshipping", "worshiping"],
   ];
   const normalizedWords = new Set(words.map(normalizeMorphologyWord));
   const hiddenWords = new Set<string>();
@@ -192,7 +209,7 @@ function buildMorphologyExchanges(view: EntryView): Bob.ExchangeObject[] {
 
   const orderedLabels = ["原形", "复数", "第三人称单数", "现在分词", "过去式", "过去分词", "比较级", "最高级"];
 
-  return orderedLabels.flatMap((label) => {
+  const exchanges = orderedLabels.flatMap((label) => {
     const items = morphologyByLabel.get(label) || [];
     if (items.length === 0) return [];
 
@@ -201,6 +218,12 @@ function buildMorphologyExchanges(view: EntryView): Bob.ExchangeObject[] {
 
     return [{ name: label, words }];
   });
+
+  for (const ref of view.entry.cross_references || []) {
+    exchanges.push({ name: "原形", words: [ref.word] });
+  }
+
+  return exchanges;
 }
 
 function getShardForWord(word: string): ShardCache | null {

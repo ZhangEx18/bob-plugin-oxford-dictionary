@@ -18,13 +18,13 @@ MDX_PATH = str(OALD_ROOT / "oaldpe.mdx")
 OUTPUT_DIR = str(PROJECT_ROOT / "dict")
 REPORT_INTERVAL = 10000
 
-VALID_POS = {"n", "v", "adj", "adv", "int", "prep", "conj", "pron", "art"}
+VALID_POS = {"n", "v", "adj", "adv", "int", "prep", "conj", "pron", "art", "num"}
 
 POS_MAP = {
     "noun": "n", "verb": "v", "adjective": "adj", "adverb": "adv",
     "exclamation": "int", "preposition": "prep", "conjunction": "conj",
-    "pronoun": "pron", "determiner": "det", "modal verb": "modal",
-    "number": "num", "abbreviation": "abbr",
+    "pronoun": "pron", "number": "num", "determiner": "det", "modal verb": "modal",
+    "abbreviation": "abbr",
 }
 
 EXCHANGE_LABELS = {"thirdps": "3", "past": "p", "pastpart": "d", "prespart": "i"}
@@ -62,6 +62,30 @@ FORM_KEY_FAMILIES: dict[str, set[str]] = {
 IRREGULAR_COMPARATIVE_FORMS = {"more", "less", "better", "worse", "farther", "further"}
 IRREGULAR_SUPERLATIVE_FORMS = {"most", "least", "best", "worst", "farthest", "furthest"}
 
+# Maps inflection relation labels to the POS keys they are allowed to inherit.
+INFLECTION_POS_FILTER: dict[str, set[str]] = {
+    "第三人称单数": {"v"},
+    "过去式": {"v"},
+    "过去分词": {"v"},
+    "现在分词": {"v"},
+    "复数": {"n"},
+    "比较级": {"adj", "adv"},
+    "最高级": {"adj", "adv"},
+}
+
+# Homograph forms that look like inflections of another word but are actually
+# standalone entries with their own independent meanings.
+# Value is a list of (base_word, label) tuples for cross-reference display.
+HOMOGRAPH_PROTECTED_FORMS: dict[str, list[tuple[str, str]]] = {
+    "found": [("find", "过去式")],
+    "left": [("leave", "过去式")],
+    "ground": [("grind", "过去式")],
+    "saw": [("see", "过去式")],
+    "bound": [("bind", "过去式")],
+    "rose": [("rise", "过去式")],
+    "sprung": [("spring", "过去分词")],
+}
+
 
 def normalize_display_text(text: str) -> str:
     normalized = text.translate(PUNCTUATION_MAP)
@@ -74,9 +98,9 @@ def normalize_pos(pos_raw: str) -> str | None:
     # Exact match first
     if pos_lower in POS_MAP:
         return POS_MAP[pos_lower]
-    # Then partial match, but avoid adverb -> verb
+    # Then partial match with word boundaries, so "adverbial" doesn't match "verb"
     for key, val in POS_MAP.items():
-        if key in pos_lower:
+        if re.search(rf'\b{re.escape(key)}\b', pos_lower):
             return val
     if "noun" in pos_lower:
         return "n"
@@ -102,6 +126,19 @@ def extract_core_senses(eroot: BeautifulSoup) -> list:
     return senses
 
 
+# Maps xrefs xt attribute values to Chinese templates for inflection forms.
+XREF_INFLECTION_TEMPLATES: dict[str, str] = {
+    "ptof": "{word} 的过去式",
+    "ppof": "{word} 的过去分词",
+    "ptppof": "{word} 的过去式和过去分词",
+    "presptof": "{word} 的现在分词",
+    "thirdpsof": "{word} 的第三人称单数",
+    "plof": "{word} 的复数",
+    "singof": "{word} 的单数",
+    "comparof": "{word} 的比较级",
+}
+
+
 def extract_meanings(soup: BeautifulSoup) -> dict[str, list[str]]:
     pos_data: dict[str, list[str]] = {}
     used_per_pos: dict[str, set[str]] = {}
@@ -120,6 +157,7 @@ def extract_meanings(soup: BeautifulSoup) -> dict[str, list[str]]:
         if pos_norm not in pos_data:
             pos_data[pos_norm] = []
             used_per_pos[pos_norm] = set()
+        found_sense = False
         for sense in extract_core_senses(eroot):
             chn_tag = sense.select_one("deft chn")
             if chn_tag:
@@ -137,12 +175,30 @@ def extract_meanings(soup: BeautifulSoup) -> dict[str, list[str]]:
                 if best:
                     used_per_pos[pos_norm].add(best)
                     pos_data[pos_norm].append(best)
+                    found_sense = True
+        # If no deft chn was found but there is an inflection cross-reference,
+        # generate a minimal translation from the xref.
+        if not found_sense:
+            xref = eroot.select_one(".xrefs")
+            if xref:
+                xt = xref.get("xt", "")
+                template = XREF_INFLECTION_TEMPLATES.get(xt)
+                if template:
+                    xh = xref.select_one(".xh")
+                    if xh:
+                        word = xh.get_text(strip=True)
+                        if word:
+                            text = template.format(word=word)
+                            if text not in used_per_pos[pos_norm]:
+                                used_per_pos[pos_norm].add(text)
+                                pos_data[pos_norm].append(text)
     return pos_data
 
 
 def extract_exchange(soup: BeautifulSoup) -> str:
     parts: list[str] = []
     vf_table = soup.select_one(".verb_forms_table")
+    verb_forms: set[str] = set()
     if vf_table:
         for tr in vf_table.select("tr"):
             form_type = tr.get("form", "")
@@ -154,10 +210,20 @@ def extract_exchange(soup: BeautifulSoup) -> str:
                     prefix.extract()
                 wf = td.get_text(strip=True)
                 if form_type in EXCHANGE_LABELS:
+                    # Filter out invalid thirdps forms like "understanding"
+                    if form_type == "thirdps" and wf.endswith("ing"):
+                        continue
                     parts.append(f"{EXCHANGE_LABELS[form_type]}:{wf}")
-    for inf in soup.select(".inflections .inflected_form"):
-        text = inf.get_text(strip=True)
-        if text:
+                    verb_forms.add(wf.lower())
+    for inf_block in soup.select(".inflections"):
+        block_text = inf_block.get_text(strip=True).lower()
+        is_plural_block = "plural" in block_text
+        for inf in inf_block.select(".inflected_form"):
+            text = inf.get_text(strip=True)
+            if not text:
+                continue
+            if text.lower() in verb_forms and not is_plural_block:
+                continue
             parts.append(f"s:{text}")
     return "/".join(parts)
 
@@ -194,7 +260,37 @@ def parse_exchange_values(exchange: str) -> dict[str, list[str]]:
     return values
 
 
-def move_surface_comparatives_into_exchange_slots(exchange_values: dict[str, list[str]], pos_summary: str) -> dict[str, list[str]]:
+def _looks_like_comparative(base_word: str, form: str) -> bool:
+    base = base_word.lower()
+    f = form.lower()
+    if f == base + "er":
+        return True
+    if base.endswith("e") and f == base + "r":
+        return True
+    if base.endswith("y") and f == base[:-1] + "ier":
+        return True
+    if len(base) >= 3 and base[-1] not in "aeiou" and base[-2] in "aeiou" and base[-3] not in "aeiouy" and f == base + base[-1] + "er":
+        return True
+    return False
+
+
+def _looks_like_superlative(base_word: str, form: str) -> bool:
+    base = base_word.lower()
+    f = form.lower()
+    if f == base + "est":
+        return True
+    if base.endswith("e") and f == base + "st":
+        return True
+    if base.endswith("y") and f == base[:-1] + "iest":
+        return True
+    if len(base) >= 3 and base[-1] not in "aeiou" and base[-2] in "aeiou" and base[-3] not in "aeiouy" and f == base + base[-1] + "est":
+        return True
+    return False
+
+
+def move_surface_comparatives_into_exchange_slots(
+    exchange_values: dict[str, list[str]], pos_summary: str, base_word: str = ""
+) -> dict[str, list[str]]:
     s_forms = exchange_values.get("s", [])
     if not s_forms:
         return exchange_values
@@ -218,10 +314,16 @@ def move_surface_comparatives_into_exchange_slots(exchange_values: dict[str, lis
             remaining_s_forms.append(form)
             continue
         if has_comparative_pos and lower_form.endswith("er"):
-            comparative_forms.append(form)
+            if not base_word or _looks_like_comparative(base_word, form):
+                comparative_forms.append(form)
+                continue
+            remaining_s_forms.append(form)
             continue
         if has_comparative_pos and lower_form.endswith("est"):
-            superlative_forms.append(form)
+            if not base_word or _looks_like_superlative(base_word, form):
+                superlative_forms.append(form)
+                continue
+            remaining_s_forms.append(form)
             continue
         remaining_s_forms.append(form)
 
@@ -305,7 +407,15 @@ def is_regular_inflection(base_word: str, form: str, form_key: str) -> bool:
         return True
 
     if form_key == "s":
-        return f in {base + "s", base + "es"}
+        if f in {base + "s", base + "es"}:
+            return True
+        if base.endswith("f") and f == base[:-1] + "ves":
+            return True
+        if base.endswith("fe") and f == base[:-2] + "ves":
+            return True
+        if base.endswith("y") and f == base[:-1] + "ies":
+            return True
+        return False
 
     if form_key == "3":
         return f in {base + "s", base + "es"}
@@ -397,18 +507,38 @@ def find_standalone_plural_parent(word: str, finalized_entries: dict[str, dict[s
     if not word.endswith("s") or word.endswith("ss"):
         return None
 
-    candidate = word[:-1]
-    candidate_entry = finalized_entries.get(candidate)
-    if not candidate_entry:
-        return None
+    candidates: list[str] = []
 
-    if candidate_entry.get("entry_kind") != "standalone":
-        return None
+    # +s rule: cats -> cat
+    candidates.append(word[:-1])
 
-    if "n" not in parse_pos_keys(candidate_entry.get("pos", "")):
-        return None
+    if word.endswith("es"):
+        # +es rule: buses -> bus, boxes -> box, potatoes -> potato
+        candidates.append(word[:-2])
+        if word.endswith("ies"):
+            # y -> ies rule: babies -> baby
+            candidates.append(word[:-3] + "y")
+    elif word.endswith("ves"):
+        # f -> ves rule: wolves -> wolf
+        candidates.append(word[:-3] + "f")
+        # fe -> ves rule: wives -> wife
+        candidates.append(word[:-3] + "fe")
 
-    return candidate
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        candidate_entry = finalized_entries.get(candidate)
+        if not candidate_entry:
+            continue
+        if candidate_entry.get("entry_kind") != "standalone":
+            continue
+        if "n" not in parse_pos_keys(candidate_entry.get("pos", "")):
+            continue
+        return candidate
+
+    return None
 
 
 def should_preserve_alias_surface(word: str, target_entry: dict[str, Any],
@@ -424,13 +554,46 @@ def should_preserve_alias_surface(word: str, target_entry: dict[str, Any],
     return "n" not in pos_keys and "v" not in pos_keys
 
 
-def create_inflection_entry(form: str, parent_entry: dict[str, Any]) -> dict[str, Any]:
+def filter_entry_pos_and_translation(entry: dict[str, Any], relation_label: str) -> dict[str, Any]:
+    """Return a shallow copy of entry with pos and translation filtered by inflection type."""
+    allowed_pos = INFLECTION_POS_FILTER.get(relation_label)
+    if allowed_pos is None:
+        return dict(entry)
+
+    result = dict(entry)
+
+    # Filter pos field
+    pos = result.get("pos", "")
+    if pos:
+        filtered_parts = []
+        for part in pos.split("/"):
+            pos_key = part.split(":")[0]
+            if pos_key in allowed_pos:
+                filtered_parts.append(part)
+        result["pos"] = "/".join(filtered_parts)
+
+    # Filter translation field
+    translation = result.get("translation", "")
+    if translation:
+        filtered_lines = []
+        for line in translation.split("\n"):
+            match = re.match(r"^([a-z]+)\.\s*(.+)$", line)
+            if match:
+                pos_key = match.group(1)
+                if pos_key in allowed_pos:
+                    filtered_lines.append(line)
+        result["translation"] = "\n".join(filtered_lines)
+
+    return result
+
+
+def create_inflection_entry(form: str, parent_entry: dict[str, Any], relation_label: str) -> dict[str, Any]:
+    entry = filter_entry_pos_and_translation(parent_entry, relation_label)
+    entry["word"] = form
+    entry["linked_word"] = parent_entry["word"]
+
     return apply_relation_metadata(
-        {
-            **parent_entry,
-            "word": form,
-            "linked_word": parent_entry["word"],
-        },
+        entry,
         entry_kind="inflection",
         display_word=parent_entry["word"],
         parent_relation=build_relation(parent_entry["word"], "原形"),
@@ -478,7 +641,7 @@ def build_exchange_lines(exchange: str) -> list[str]:
 
 def build_translation(pos_data: dict[str, list[str]]) -> str:
     lines = []
-    for pos_norm in ["v", "n", "adj", "adv", "int", "prep", "conj", "pron"]:
+    for pos_norm in ["v", "n", "adj", "adv", "int", "prep", "conj", "pron", "num"]:
         if pos_norm in pos_data and pos_data[pos_norm]:
             text = "，".join(pos_data[pos_norm])
             lines.append(f"{pos_norm}. {text}")
@@ -490,7 +653,7 @@ def build_pos_freq(pos_data: dict[str, list[str]]) -> str:
     if total == 0:
         return ""
     parts = []
-    for pos_norm in ["v", "n", "adj", "adv", "int", "prep", "conj", "pron"]:
+    for pos_norm in ["v", "n", "adj", "adv", "int", "prep", "conj", "pron", "num"]:
         if pos_norm in pos_data and pos_data[pos_norm]:
             pct = round(len(pos_data[pos_norm]) / total * 100)
             parts.append(f"{pos_norm}:{pct}")
@@ -507,7 +670,15 @@ def parse_entry(html: str, word: str, lookup: dict[str, str] = {}) -> dict | Non
         return None
 
     pos = build_pos_freq(cn_data)
-    exchange_values = move_surface_comparatives_into_exchange_slots(parse_exchange_values(extract_exchange(soup)), pos)
+    exchange_values = move_surface_comparatives_into_exchange_slots(parse_exchange_values(extract_exchange(soup)), pos, word)
+
+    # For nouns that also function as verbs, the third-person singular form
+    # often doubles as the plural (e.g. find -> finds, work -> works).
+    # If MDX omits explicit plural inflections, mirror the 3-slot into s.
+    pos_keys = parse_pos_keys(pos)
+    if "n" in pos_keys and not exchange_values.get("s") and exchange_values.get("3"):
+        exchange_values["s"] = [*exchange_values["3"]]
+
     exchange = serialize_exchange_values(exchange_values)
     translation = build_translation(cn_data)
     phrasal_verbs = extract_phrasal_verbs(soup, lookup)
@@ -630,6 +801,7 @@ def main():
                     child_relations_map[base_word].append(relation)
                 if entry.get("pos") and form_key not in parent_relations_map:
                     parent_relations_map[form_key] = build_relation(entry["word"], "原形")
+                    parent_relations_map[form_key]["_inflection_label"] = label
 
     finalized_entries: dict[str, dict[str, Any]] = {}
     for word_key, entry in standalone_cache.items():
@@ -649,45 +821,56 @@ def main():
                         break
 
                 if current_form_key and not is_regular_inflection(base_word, word_key, current_form_key):
-                    parent_relation = potential_parent
+                    if word_key not in HOMOGRAPH_PROTECTED_FORMS:
+                        parent_relation = potential_parent
 
-                    current_idx = EXCHANGE_DISPLAY_ORDER.index(current_form_key)
-                    allowed_later_keys = FORM_KEY_FAMILIES.get(current_form_key, set())
-                    for later_key in EXCHANGE_DISPLAY_ORDER[current_idx + 1 :]:
-                        if later_key not in allowed_later_keys:
-                            continue
-                        label = classify_inflection_parent(base_entry, later_key)
-                        if not label:
-                            continue
-                        for form in base_exchange.get(later_key, []):
-                            if form.lower() == word_key:
+                        current_idx = EXCHANGE_DISPLAY_ORDER.index(current_form_key)
+                        allowed_later_keys = FORM_KEY_FAMILIES.get(current_form_key, set())
+                        for later_key in EXCHANGE_DISPLAY_ORDER[current_idx + 1 :]:
+                            if later_key not in allowed_later_keys:
                                 continue
-                            # For irregular comparative/superlative forms, only link to
-                            # other irregular forms in the same suppletion path.
-                            if current_form_key in {"c", "sup"}:
-                                lower_form = form.lower()
-                                is_current_irregular = (
-                                    word_key in IRREGULAR_COMPARATIVE_FORMS
-                                    or word_key in IRREGULAR_SUPERLATIVE_FORMS
-                                )
-                                is_target_irregular = (
-                                    lower_form in IRREGULAR_COMPARATIVE_FORMS
-                                    or lower_form in IRREGULAR_SUPERLATIVE_FORMS
-                                )
-                                if is_current_irregular and not is_target_irregular:
+                            label = classify_inflection_parent(base_entry, later_key)
+                            if not label:
+                                continue
+                            for form in base_exchange.get(later_key, []):
+                                if form.lower() == word_key:
                                     continue
-                            relation = build_relation(form, label)
-                            existing = child_relations_map.get(word_key, [])
-                            if relation not in existing:
-                                child_relations_map.setdefault(word_key, []).append(relation)
+                                # For irregular comparative/superlative forms, only link to
+                                # other irregular forms in the same suppletion path.
+                                if current_form_key in {"c", "sup"}:
+                                    lower_form = form.lower()
+                                    is_current_irregular = (
+                                        word_key in IRREGULAR_COMPARATIVE_FORMS
+                                        or word_key in IRREGULAR_SUPERLATIVE_FORMS
+                                    )
+                                    is_target_irregular = (
+                                        lower_form in IRREGULAR_COMPARATIVE_FORMS
+                                        or lower_form in IRREGULAR_SUPERLATIVE_FORMS
+                                    )
+                                    if is_current_irregular and not is_target_irregular:
+                                        continue
+                                relation = build_relation(form, label)
+                                existing = child_relations_map.get(word_key, [])
+                                if relation not in existing:
+                                    child_relations_map.setdefault(word_key, []).append(relation)
+
+        # Strip internal metadata fields from parent_relation before serializing.
+        clean_parent_relation = None
+        if parent_relation:
+            clean_parent_relation = {k: v for k, v in parent_relation.items() if not k.startswith("_")}
 
         finalized_entries[word_key] = apply_relation_metadata(
             entry,
             entry_kind="standalone",
             display_word=entry["word"],
-            parent_relation=parent_relation,
+            parent_relation=clean_parent_relation,
             child_relations=child_relations_map.get(word_key, []),
         )
+        if word_key in HOMOGRAPH_PROTECTED_FORMS:
+            finalized_entries[word_key]["cross_references"] = [
+                {"word": base, "label": label}
+                for base, label in HOMOGRAPH_PROTECTED_FORMS[word_key]
+            ]
 
     print("Phase 3: Processing link entries...")
     link_processed = 0
@@ -731,6 +914,16 @@ def main():
             display_word = word
 
         entry_kind = "inflection" if parent_relation else "alias"
+        inflection_label = None
+        if parent_relation:
+            inflection_label = parent_relation.get("_inflection_label")
+            # If no _inflection_label, it came from find_standalone_plural_parent
+            if not inflection_label:
+                inflection_label = "复数"
+
+        if inflection_label:
+            source_entry = filter_entry_pos_and_translation(source_entry, inflection_label)
+
         data = apply_relation_metadata(
             {
                 **source_entry,
@@ -739,7 +932,7 @@ def main():
             },
             entry_kind=entry_kind,
             display_word=display_word,
-            parent_relation=parent_relation,
+            parent_relation={k: v for k, v in parent_relation.items() if not k.startswith("_")} if parent_relation else None,
             child_relations=[],
         )
         finalized_entries[word_key] = data
@@ -760,7 +953,7 @@ def main():
             form_key = form.lower()
             if form_key in finalized_entries:
                 continue
-            finalized_entries[form_key] = create_inflection_entry(form, entry)
+            finalized_entries[form_key] = create_inflection_entry(form, entry, relation["label"])
             materialized += 1
 
     print(f"Phase 4 complete: {materialized} entries materialized")
