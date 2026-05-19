@@ -773,7 +773,7 @@ test('single-sense parts keep the full meaning line while multi-sense parts dedu
   assert.deepEqual(sDict.script.translation_parts, [
     {
       pos: 'n.',
-      meanings: ['剧本,电影剧本', '笔迹', '(一种语言的)字母系统', '笔试答卷', '脚本(程序)(计算机的一系列指令)'],
+      meanings: ['剧本,电影剧本', '笔迹', '(一种语言的)字母系统', '笔试答卷', '脚本(程序)'],
     },
     { pos: 'v.', meanings: ['为(电影或戏剧等)写剧本'] },
   ])

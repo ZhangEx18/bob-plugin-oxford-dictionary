@@ -150,7 +150,7 @@ test('leaves aggregates parts from both leaf and leave inflection sources', asyn
   const verbParts = parts.filter((part) => part.part === 'v.')
   assert.equal(verbParts.length, 1, `leaves should merge verb parts, got: ${JSON.stringify(parts)}`)
   assert.deepEqual(verbParts[0]?.means || [], [
-    '离开(某人或某处),离开居住地点(或群体、工作单位等)；遗弃；忘了带；使保留；留下备用(或销售等)；使发生；发布；不立刻做；把…留交；(去世时)遗赠；(死后)留下(家人)；剩余\n[leave 的 第三人称单数]',
+    '离开(某人或某处),离开居住地点；遗弃；忘了带；使保留；留下备用(或销售等)；使发生；发布；不立刻做；把…留交；(去世时)遗赠；(死后)留下(家人)；剩余\n[leave 的 第三人称单数]',
   ])
 })
 

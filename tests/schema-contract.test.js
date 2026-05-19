@@ -1,0 +1,299 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const ENTRY_SCHEMA = {
+  word: ['string', true],
+  phonetic: ['string', false],
+  phonetic_us: ['string', false],
+  translation: ['string', false],
+  pos: ['string', false],
+  exchange: [['string', 'array'], false],
+  translation_parts: ['array', false],
+  translation_detail_parts: ['array', false],
+  phrasal_verbs: ['array', false],
+  linked_word: ['string', false],
+  entry_kind: ['string', true],
+  display_word: ['string', false],
+  parent_relation: [['object', 'null'], false],
+  child_relations: ['array', false],
+  cross_references: ['array', false],
+  inflection_sources: ['array', false],
+  relations: ['array', false],
+}
+
+const VALID_ENTRY_KINDS = new Set(['standalone', 'inflection', 'alias'])
+
+function loadAllShards() {
+  const dictDir = path.join(__dirname, '..', 'dict')
+  const entries = {}
+  for (const file of fs.readdirSync(dictDir)) {
+    if (!file.endsWith('.json')) continue
+    Object.assign(entries, JSON.parse(fs.readFileSync(path.join(dictDir, file), 'utf8')))
+  }
+  return entries
+}
+
+function validateType(value, allowedTypes) {
+  if (allowedTypes.includes('null') && value === null) return true
+  const jsType = Array.isArray(value) ? 'array' : typeof value
+  return allowedTypes.includes(jsType)
+}
+
+const entries = loadAllShards()
+const entryList = Object.entries(entries)
+
+test('every entry has only known fields', () => {
+  const knownKeys = new Set(Object.keys(ENTRY_SCHEMA))
+  const failures = []
+  for (const [key, entry] of entryList) {
+    for (const field of Object.keys(entry)) {
+      if (!knownKeys.has(field)) {
+        failures.push({ key, field })
+        if (failures.length >= 10) break
+      }
+    }
+    if (failures.length >= 10) break
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} entries with unknown fields: ${JSON.stringify(failures.slice(0, 5))}`)
+})
+
+test('every entry has all required fields', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    for (const [field, [, required]] of Object.entries(ENTRY_SCHEMA)) {
+      if (!required) continue
+      if (!(field in entry) || entry[field] === undefined) {
+        failures.push({ key, field })
+        if (failures.length >= 10) break
+      }
+    }
+    if (failures.length >= 10) break
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} entries missing required fields: ${JSON.stringify(failures.slice(0, 5))}`)
+})
+
+test('every field has the correct type', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    for (const [field, value] of Object.entries(entry)) {
+      if (value === undefined || value === null) continue
+      const schemaDef = ENTRY_SCHEMA[field]
+      if (!schemaDef) continue
+      const [allowedTypes] = schemaDef
+      const types = Array.isArray(allowedTypes) ? allowedTypes : [allowedTypes]
+      if (!validateType(value, types)) {
+        failures.push({ key, field, expected: types, actual: typeof value })
+        if (failures.length >= 10) break
+      }
+    }
+    if (failures.length >= 10) break
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} entries with wrong field type: ${JSON.stringify(failures.slice(0, 3))}`)
+})
+
+test('translation_parts items have correct shape', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    if (!Array.isArray(entry.translation_parts)) continue
+    for (const part of entry.translation_parts) {
+      if (!part || typeof part !== 'object') {
+        failures.push({ key, part })
+        if (failures.length >= 10) break
+        continue
+      }
+      if (typeof part.pos !== 'string' || !Array.isArray(part.meanings)) {
+        failures.push({ key, part })
+        if (failures.length >= 10) break
+      }
+    }
+    if (failures.length >= 10) break
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} malformed translation_parts: ${JSON.stringify(failures.slice(0, 3))}`)
+})
+
+test('translation_detail_parts items have correct shape', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    if (!Array.isArray(entry.translation_detail_parts)) continue
+    for (const part of entry.translation_detail_parts) {
+      if (!part || typeof part !== 'object') {
+        failures.push({ key, part })
+        if (failures.length >= 10) break
+        continue
+      }
+      if (typeof part.pos !== 'string' || !Array.isArray(part.details)) {
+        failures.push({ key, part })
+        if (failures.length >= 10) break
+        continue
+      }
+      for (const detail of part.details) {
+        if (!detail || typeof detail.text !== 'string') {
+          failures.push({ key, detail })
+          if (failures.length >= 10) break
+        }
+      }
+      if (failures.length >= 10) break
+    }
+    if (failures.length >= 10) break
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} malformed translation_detail_parts: ${JSON.stringify(failures.slice(0, 3))}`)
+})
+
+test('phrasal_verbs items have correct shape', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    if (!Array.isArray(entry.phrasal_verbs)) continue
+    for (const pv of entry.phrasal_verbs) {
+      if (!pv || typeof pv.name !== 'string' || typeof pv.translation !== 'string') {
+        failures.push({ key, pv })
+        if (failures.length >= 10) break
+      }
+    }
+    if (failures.length >= 10) break
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} malformed phrasal_verbs: ${JSON.stringify(failures.slice(0, 3))}`)
+})
+
+test('relations items have correct shape and valid enums', () => {
+  const failures = []
+  const validTypes = new Set(['inflection', 'origin', 'xref', 'lexical_origin', 'defective', 'variant', 'self_loop'])
+  const validDirections = new Set(['outgoing', 'incoming'])
+  const validDisplays = new Set(['exchange', 'reference', 'hidden'])
+  const validSources = new Set(['exchange', 'protected', 'derived', 'manual'])
+
+  for (const [key, entry] of entryList) {
+    if (!Array.isArray(entry.relations)) continue
+    for (const rel of entry.relations) {
+      if (!rel || typeof rel !== 'object') {
+        failures.push({ key, rel })
+        if (failures.length >= 10) break
+        continue
+      }
+      if (typeof rel.target !== 'string') {
+        failures.push({ key, rel, missing: 'target' })
+        if (failures.length >= 10) break
+      }
+      if (!validTypes.has(rel.type)) {
+        failures.push({ key, rel, invalid: 'type' })
+        if (failures.length >= 10) break
+      }
+      if (!validDirections.has(rel.direction)) {
+        failures.push({ key, rel, invalid: 'direction' })
+        if (failures.length >= 10) break
+      }
+      if (typeof rel.navigable !== 'boolean') {
+        failures.push({ key, rel, invalid: 'navigable' })
+        if (failures.length >= 10) break
+      }
+      if (!validDisplays.has(rel.display)) {
+        failures.push({ key, rel, invalid: 'display' })
+        if (failures.length >= 10) break
+      }
+      if (!validSources.has(rel.source)) {
+        failures.push({ key, rel, invalid: 'source' })
+        if (failures.length >= 10) break
+      }
+    }
+    if (failures.length >= 10) break
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} malformed relations: ${JSON.stringify(failures.slice(0, 3))}`)
+})
+
+test('parent_relation has correct shape when not null', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    if (!entry.parent_relation || entry.parent_relation === null) continue
+    const pr = entry.parent_relation
+    // Legacy format uses 'word' instead of 'target'
+    if (typeof pr.target !== 'string' && typeof pr.word !== 'string') {
+      failures.push({ key, parent_relation: pr })
+      if (failures.length >= 10) break
+    }
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} malformed parent_relation: ${JSON.stringify(failures.slice(0, 3))}`)
+})
+
+test('child_relations items have correct shape', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    if (!Array.isArray(entry.child_relations)) continue
+    for (const child of entry.child_relations) {
+      // Legacy format uses 'word' instead of 'target'
+      if (!child || (typeof child.target !== 'string' && typeof child.word !== 'string')) {
+        failures.push({ key, child })
+        if (failures.length >= 10) break
+      }
+    }
+    if (failures.length >= 10) break
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} malformed child_relations: ${JSON.stringify(failures.slice(0, 3))}`)
+})
+
+test('inflection_sources items have correct shape', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    if (!Array.isArray(entry.inflection_sources)) continue
+    for (const source of entry.inflection_sources) {
+      if (!source || typeof source.word !== 'string' || typeof source.label !== 'string') {
+        failures.push({ key, source })
+        if (failures.length >= 10) break
+      }
+    }
+    if (failures.length >= 10) break
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} malformed inflection_sources: ${JSON.stringify(failures.slice(0, 3))}`)
+})
+
+test('entry_kind is always a valid enum value', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    if (!VALID_ENTRY_KINDS.has(entry.entry_kind)) {
+      failures.push({ key, entry_kind: entry.entry_kind })
+      if (failures.length >= 10) break
+    }
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} invalid entry_kind: ${JSON.stringify(failures.slice(0, 5))}`)
+})
+
+test('pos follows valid format when present', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    if (!entry.pos) continue
+    const parts = entry.pos.split('/')
+    for (const part of parts) {
+      const trimmed = part.trim()
+      if (!/^[a-z]+\.?(:\d+)?$/.test(trimmed)) {
+        failures.push({ key, pos: entry.pos, part: trimmed })
+        if (failures.length >= 10) break
+      }
+    }
+    if (failures.length >= 10) break
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} invalid pos format: ${JSON.stringify(failures.slice(0, 3))}`)
+})
+
+test('word field is non-empty string for all entries', () => {
+  const failures = []
+  for (const [key, entry] of entryList) {
+    if (!entry.word || typeof entry.word !== 'string' || entry.word.trim() === '') {
+      failures.push(key)
+      if (failures.length >= 10) break
+    }
+  }
+  assert.equal(failures.length, 0,
+    `${failures.length} entries with empty word: ${failures.slice(0, 5).join(', ')}`)
+})

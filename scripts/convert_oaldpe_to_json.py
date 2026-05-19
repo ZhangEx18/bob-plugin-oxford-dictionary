@@ -187,6 +187,19 @@ def strip_bracket_content(text: str) -> str:
     return re.sub(r"[（(].*?[）)]", "", text)
 
 
+def strip_long_brackets_only(text: str, max_chinese_chars: int = 7) -> str:
+    """Remove only bracket blocks whose Chinese char count exceeds the threshold."""
+    def replacer(match: re.Match[str]) -> str:
+        content = match.group(1)
+        chinese_count = len(re.findall(r"[一-鿿]", content))
+        if chinese_count > max_chinese_chars:
+            return ""
+        return match.group(0)
+
+    result = re.sub(r"[（(](.*?)[）)]", replacer, text)
+    return re.sub(r"\s+", " ", result).strip()
+
+
 def build_meaning_dedupe_key(text: str) -> str:
     cleaned = normalize_display_text(strip_bracket_content(text))
     return re.sub(r"[，,；;、\s]+", "", cleaned)
@@ -236,17 +249,55 @@ def prepend_qualifier(text: str, qualifier: str) -> str:
 
 
 def extract_unique_fragments(text: str) -> list[str]:
-    fragments: list[str] = []
-    seen_keys: set[str] = set()
+    raw_fragments: list[str] = []
     for fragment in split_by_delimiters_keep_brackets(text):
         normalized_fragment = normalize_display_text(fragment)
         if not normalized_fragment:
             continue
-        dedupe_key = build_meaning_dedupe_key(normalized_fragment)
-        if not dedupe_key or dedupe_key in seen_keys:
+        raw_fragments.append(normalized_fragment)
+
+    # Count dedupe-key frequencies and track max bracket length per key.
+    key_counts: dict[str, int] = {}
+    key_max_bracket_chinese: dict[str, int] = {}
+    for fragment in raw_fragments:
+        key = build_meaning_dedupe_key(fragment)
+        if key:
+            key_counts[key] = key_counts.get(key, 0) + 1
+            chinese_counts = [
+                len(re.findall(r"[一-鿿]", m))
+                for m in re.findall(r"[（(](.*?)[）)]", fragment)
+            ]
+            max_chinese = max(chinese_counts) if chinese_counts else 0
+            if max_chinese > key_max_bracket_chinese.get(key, 0):
+                key_max_bracket_chinese[key] = max_chinese
+
+    fragments: list[str] = []
+    seen_keys: set[str] = set()
+    for fragment in raw_fragments:
+        key = build_meaning_dedupe_key(fragment)
+        if not key or key in seen_keys:
             continue
-        seen_keys.add(dedupe_key)
-        fragments.append(normalized_fragment)
+        seen_keys.add(key)
+
+        clean_fragment = strip_bracket_content(fragment).strip()
+        should_strip = False
+        max_bracket_chinese = key_max_bracket_chinese.get(key, 0)
+
+        # v3.2.0 rule 1: multiple fragments deduped to same key.
+        # Strip brackets only if any bracket content exceeds 7 Chinese chars.
+        # Otherwise keep the first fragment's brackets.
+        if key_counts.get(key, 0) > 1:
+            if max_bracket_chinese > 7:
+                should_strip = True
+        # v3.2.0 rule 2: single fragment with bracket content > 7 Chinese chars.
+        # Strip only the long brackets, keep short ones.
+        elif clean_fragment != fragment and max_bracket_chinese > 7:
+            clean_fragment = strip_long_brackets_only(fragment)
+            fragments.append(clean_fragment if clean_fragment else fragment)
+            continue
+
+        fragments.append(clean_fragment if should_strip else fragment)
+
     return fragments
 
 
@@ -260,20 +311,38 @@ def pick_followup_fragment(fragments: list[str], qualifier: str) -> str | None:
     return fragments[0]
 
 
+def _extract_labels_text(sense: BeautifulSoup) -> str:
+    """Extract label text from a sense element."""
+    labels = sense.select(".labels .lb")
+    return " ".join(
+        normalize_display_text(lb.get_text(strip=True))
+        for lb in labels
+    )
+
+
 def collect_sense_records(eroot: BeautifulSoup) -> list[dict[str, Any]]:
     core_senses = extract_core_senses(eroot)
     fallback_senses = eroot.select("li.sense") if not core_senses else []
     candidate_senses = core_senses or fallback_senses
-    sense_records = [
-        {
-            "text": normalize_display_text(chn_tag.get_text(strip=True)),
-            "qualifier": extract_semantic_qualifier(sense),
-            "countability": extract_countability(sense),
-        }
-        for sense in candidate_senses
-        for chn_tag in [sense.select_one("deft chn")]
-        if chn_tag and normalize_display_text(chn_tag.get_text(strip=True))
-    ]
+    sense_records: list[dict[str, Any]] = []
+    for sense in candidate_senses:
+        chn_tag = sense.select_one("deft chn")
+        if not chn_tag:
+            continue
+        text = normalize_display_text(chn_tag.get_text(strip=True))
+        if not text:
+            continue
+        # v3.2.0: Detect old-fashioned marker and append it to the end.
+        labels_text = _extract_labels_text(sense)
+        if "old-fashioned" in labels_text.lower() or "老式用法" in labels_text:
+            text = f"{text} [老式用法]"
+        sense_records.append(
+            {
+                "text": text,
+                "qualifier": extract_semantic_qualifier(sense),
+                "countability": extract_countability(sense),
+            }
+        )
     if sense_records:
         return sense_records
 
