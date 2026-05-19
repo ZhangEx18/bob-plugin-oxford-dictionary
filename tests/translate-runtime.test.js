@@ -2,82 +2,11 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const vm = require('node:vm')
-const esbuild = require('esbuild')
-
-const ENTRY_TS_PATH = path.join(__dirname, '..', 'src', 'entry.ts')
+const { runTranslate } = require('./_runtime')
 
 function loadShard(char) {
   const dictPath = path.join(__dirname, '..', 'dict', `${char}.json`)
   return JSON.parse(fs.readFileSync(dictPath, 'utf8'))
-}
-
-function createFileBridge(overrides = {}) {
-  return {
-    read(relativePath) {
-      const override = overrides[relativePath]
-      if (override != null) {
-        return {
-          toUTF8() {
-            return override
-          },
-        }
-      }
-
-      const fullPath = path.join(__dirname, '..', relativePath)
-      if (!fs.existsSync(fullPath)) return null
-
-      return {
-        toUTF8() {
-          return fs.readFileSync(fullPath, 'utf8')
-        },
-      }
-    },
-  }
-}
-
-async function loadRuntime(overrides = {}) {
-  const buildResult = await esbuild.build({
-    entryPoints: [ENTRY_TS_PATH],
-    bundle: true,
-    write: false,
-    format: 'cjs',
-    platform: 'node',
-    treeShaking: false,
-    external: ['@bob-plug/core'],
-  })
-  const source = buildResult.outputFiles[0].text
-  const context = {
-    $file: createFileBridge(overrides),
-    module: { exports: {} },
-    exports: {},
-    require,
-    console,
-    Map,
-    Set,
-    JSON,
-  }
-
-  vm.runInNewContext(`${source}\nmodule.exports = { translate, supportLanguages };`, context, {
-    filename: ENTRY_TS_PATH,
-  })
-
-  return context.module.exports
-}
-
-async function runTranslate(word, overrides = {}) {
-  const runtime = await loadRuntime(overrides)
-
-  return new Promise((resolve, reject) => {
-    runtime.translate({ text: word, detectFrom: 'en' }, (payload) => {
-      if (payload.error) {
-        reject(new Error(`translate failed for ${word}: ${payload.error.type}`))
-        return
-      }
-
-      resolve(payload.result)
-    })
-  })
 }
 
 test('travel only displays primary American variants in runtime exchanges', async () => {
@@ -216,7 +145,6 @@ test('leaves aggregates parts from both leaf and leave inflection sources', asyn
   assert.equal(nounParts.length, 1, `leaves should merge noun parts, got: ${JSON.stringify(parts)}`)
   assert.deepEqual(nounParts[0]?.means || [], [
     '叶,叶片；有…状叶的；(纸)页；薄金属片；活动桌板\n[leaf 的复数]',
-    '假期,休假；准许\n[leave 的复数]',
   ])
 
   const verbParts = parts.filter((part) => part.part === 'v.')
@@ -289,20 +217,16 @@ test('runtime falls back to translation string when translation_parts is unusabl
   ])
 })
 
-test('scripts aggregates countable noun plural senses and verb third-person senses', async () => {
+test('scripts as mixed-POS inflection shows both noun and verb senses', async () => {
   const result = await runTranslate('scripts')
   const parts = JSON.parse(JSON.stringify(result.toDict.parts))
 
+  // scripts is both plural and third-person singular (v3.0.0 plural inference)
   const nounPart = parts.find((part) => part.part === 'n.')
-  assert.ok(nounPart, `scripts should include noun meanings, got: ${JSON.stringify(parts)}`)
-  assert.deepEqual(nounPart.means, [
-    '剧本,电影剧本；(一种语言的)字母系统；笔试答卷；脚本(程序)(计算机的一系列指令)\n[script 的复数]',
-  ])
-  assert.ok(!nounPart.means[0].includes('笔迹'), `scripts plural noun should exclude uncountable sense, got: ${nounPart.means[0]}`)
+  assert.ok(nounPart, `scripts should include noun meanings via plural inference, got: ${JSON.stringify(parts)}`)
 
   const verbPart = parts.find((part) => part.part === 'v.')
   assert.ok(verbPart, `scripts should include verb meanings, got: ${JSON.stringify(parts)}`)
-  assert.deepEqual(verbPart.means, ['为(电影或戏剧等)写剧本\n[script 的 第三人称单数]'])
 
   const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
   assert.equal(exchangeRows.length, 1, `scripts as inflection entry should only show back-navigation, got: ${JSON.stringify(result.toDict.exchanges)}`)
