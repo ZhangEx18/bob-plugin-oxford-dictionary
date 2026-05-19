@@ -65,6 +65,28 @@ FORM_KEY_FAMILIES: dict[str, set[str]] = {
 }
 IRREGULAR_COMPARATIVE_FORMS = {"more", "less", "better", "worse", "farther", "further"}
 IRREGULAR_SUPERLATIVE_FORMS = {"most", "least", "best", "worst", "farthest", "furthest"}
+
+IRREGULAR_PLURALS: dict[str, str] = {
+    "child": "children",
+    "man": "men",
+    "woman": "women",
+    "foot": "feet",
+    "tooth": "teeth",
+    "mouse": "mice",
+    "goose": "geese",
+    "ox": "oxen",
+    "person": "people",
+    "cactus": "cacti",
+    "focus": "foci",
+    "fungus": "fungi",
+    "nucleus": "nuclei",
+    "syllabus": "syllabi",
+    "analysis": "analyses",
+    "crisis": "crises",
+    "phenomenon": "phenomena",
+    "criterion": "criteria",
+    "datum": "data",
+}
 FRAGMENT_JOINER = ","
 MEANING_JOINER = "；"
 QUALIFIER_LEFT = "("
@@ -720,6 +742,26 @@ def is_regular_inflection(base_word: str, form: str, form_key: str) -> bool:
     return False
 
 
+def infer_plural_form(word: str) -> str | None:
+    """Infer the regular plural form of a noun. Returns None if irregular."""
+    w = word.lower().strip()
+    if not w:
+        return None
+    if w in IRREGULAR_PLURALS:
+        return IRREGULAR_PLURALS[w]
+    if w.endswith(("s", "x", "z", "ch", "sh")):
+        return w + "es"
+    if w.endswith("y") and len(w) > 1 and w[-2] not in "aeiou":
+        return w[:-1] + "ies"
+    if w.endswith("f") and len(w) > 1:
+        return w[:-1] + "ves"
+    if w.endswith("fe") and len(w) > 2:
+        return w[:-2] + "ves"
+    if w.endswith("o") and len(w) > 1 and w[-2] not in "aeiou":
+        return w + "es"
+    return w + "s"
+
+
 def classify_inflection_parent(entry: dict[str, Any], form_key: str) -> str | None:
     pos_keys = parse_pos_keys(entry.get("pos", ""))
     if not pos_keys:
@@ -1036,15 +1078,33 @@ def parse_entry(html: str, word: str, lookup: dict[str, str] = {}) -> dict | Non
     if not cn_data:
         return None
 
+    # v3.1.0/v3.1.1: Append "的" to adjective meanings that don't already
+    # contain or end with "的".  If a segment already has "的" anywhere
+    # (e.g. "特指的（与泛指相对）"), skip it to avoid "...的）的".
+    def _ensure_adj_de(text: str) -> str:
+        segments = text.split("；")
+        result: list[str] = []
+        for seg in segments:
+            stripped = seg.strip()
+            if not stripped:
+                continue
+            if "的" not in stripped and not stripped.endswith("的"):
+                stripped += "的"
+            result.append(stripped)
+        return "；".join(result)
+
+    if "adj" in cn_data:
+        cn_data["adj"] = [_ensure_adj_de(text) for text in cn_data["adj"]]
+
     pos = build_pos_freq(cn_data)
     exchange_values = move_surface_comparatives_into_exchange_slots(parse_exchange_values(extract_exchange(soup)), pos, word)
 
-    # For nouns that also function as verbs, the third-person singular form
-    # often doubles as the plural (e.g. find -> finds, work -> works).
-    # If MDX omits explicit plural inflections, mirror the 3-slot into s.
-    pos_keys = parse_pos_keys(pos)
-    if "n" in pos_keys and not exchange_values.get("s") and exchange_values.get("3"):
-        exchange_values["s"] = [*exchange_values["3"]]
+    # NOTE: Removed n+v mixed-POS mirror heuristic (v3.0.0).
+    # Previously, "script -> scripts" would auto-inherit the full verb timeline
+    # because "3" was mirrored into "s". This caused inflection entries like
+    # "scripts" to incorrectly carry "scripting/scripted" as child morphology.
+    # Plural queryability for mixed-POS words is now handled exclusively via
+    # explicit exchange/relation evidence, not heuristic inference.
 
     exchange = serialize_exchange_values(exchange_values)
     translation_parts = build_translation_parts(cn_data)
@@ -1065,12 +1125,8 @@ def parse_entry(html: str, word: str, lookup: dict[str, str] = {}) -> dict | Non
     }
 
 
-def main():
-    print("Loading MDX dictionary...")
-    mdx = MDX(MDX_PATH, encoding="utf-8")
-    total = len(mdx)
-    print(f"Total entries: {total}")
-
+def build_lookup_index(mdx: MDX) -> tuple[dict[str, str], dict[str, str], int]:
+    """Stage A-1: Build lookup index from MDX data."""
     print("Building lookup index...")
     lookup: dict[str, str] = {}
     alias_targets: dict[str, str] = {}
@@ -1097,7 +1153,11 @@ def main():
             lookup[word] = html
         alias_targets[word] = target
     print(f"Lookup entries: {len(lookup)}")
+    return lookup, alias_targets, len(mdx)
 
+
+def resolve_link_chains(lookup: dict[str, str], alias_targets: dict[str, str]) -> dict[str, str]:
+    """Stage A-2: Resolve @@@LINK= chains to final targets."""
     print("Resolving link chains...")
     final_target: dict[str, str] = {}
     for word, html in lookup.items():
@@ -1117,8 +1177,12 @@ def main():
             final_target[word] = target
 
     print(f"Resolved links: {len(final_target)}")
+    return final_target
 
-    print("Phase 1: Processing non-link entries...")
+
+def parse_non_link_entries(lookup: dict[str, str]) -> dict[str, dict[str, Any]]:
+    """Stage A-3: Parse non-link entries from raw HTML."""
+    print("Stage A: Parsing non-link entries...")
     processed = 0
     skipped = 0
     standalone_cache: dict[str, dict[str, Any]] = {}
@@ -1143,9 +1207,56 @@ def main():
         if processed % REPORT_INTERVAL == 0:
             print(f"  Processed: {processed}")
 
-    print(f"Phase 1 complete: {processed} entries, {skipped} skipped")
+    print(f"Stage A complete: {processed} entries, {skipped} skipped")
+    return standalone_cache
 
-    print("Phase 2: Building relation metadata...")
+
+def main():
+    print("Loading MDX dictionary...")
+    mdx = MDX(MDX_PATH, encoding="utf-8")
+    total = len(mdx)
+    print(f"Total entries: {total}")
+
+    # Stage A: Parse source entries from MDX
+    lookup, alias_targets, total = build_lookup_index(mdx)
+    final_target = resolve_link_chains(lookup, alias_targets)
+    standalone_cache = parse_non_link_entries(lookup)
+
+    # Stage C: Derive morphology & relations
+    (
+        child_relations_map,
+        parent_relations_map,
+        relation_edges_map,
+        blocked_surface_forms_by_base,
+    ) = build_relation_metadata(standalone_cache)
+
+    finalized_entries = finalize_standalone_entries(
+        standalone_cache,
+        child_relations_map,
+        parent_relations_map,
+        relation_edges_map,
+    )
+
+    link_processed = process_link_entries(
+        finalized_entries,
+        final_target,
+        parent_relations_map,
+        child_relations_map,
+        blocked_surface_forms_by_base,
+        lookup,
+    )
+
+    materialize_missing_inflections(finalized_entries)
+
+    # Stage D: Render & shard
+    write_shards(finalized_entries, total, len(standalone_cache), link_processed)
+
+
+def build_relation_metadata(
+    standalone_cache: dict[str, dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, str]]], dict[str, list[dict[str, str]]], dict[str, list[dict[str, Any]]], dict[str, set[str]]]:
+    """Stage C-1: Build child/parent relation maps and blocked forms from parsed entries."""
+    print("Stage C-1: Building relation metadata...")
     child_relations_map: dict[str, list[dict[str, str]]] = {}
     parent_relations_map: dict[str, list[dict[str, str]]] = {}
     relation_edges_map: dict[str, list[dict[str, Any]]] = {}
@@ -1197,6 +1308,80 @@ def main():
                     new_relation["_inflection_label"] = label
                     parent_relations_map[form_key].append(new_relation)
 
+    # Infer plural forms for nouns that lack an explicit 's' slot in their exchange.
+    for entry in standalone_cache.values():
+        base_word = entry["word"].lower()
+        pos_keys = parse_pos_keys(entry.get("pos", ""))
+        if "n" not in pos_keys:
+            continue
+        exchange_values = parse_exchange_values(entry.get("exchange", ""))
+        existing_s = set(f.lower() for f in exchange_values.get("s", []))
+        if existing_s:
+            continue
+        # Skip if all noun senses are uncountable
+        detail_parts = entry.get("translation_detail_parts", [])
+        noun_details = [
+            d for part in detail_parts
+            if part.get("pos") == "n."
+            for d in part.get("details", [])
+        ]
+        if noun_details and all(d.get("countability") == "uncountable" for d in noun_details):
+            continue
+        inferred = infer_plural_form(entry["word"])
+        if not inferred or inferred.lower() == base_word:
+            continue
+        inf_key = inferred.lower()
+        # Skip if already handled via exchange or blocked
+        blocked = blocked_surface_forms_by_base.get(base_word, set())
+        if inf_key in blocked:
+            continue
+        if inf_key in existing_s:
+            continue
+        label = EXCHANGE_DISPLAY_LABELS.get("s", "复数")
+        # Always add child relation on the base side.
+        child_relations_map.setdefault(base_word, [])
+        relation = build_relation(inferred, label)
+        if relation not in child_relations_map[base_word]:
+            child_relations_map[base_word].append(relation)
+        append_relation_edge(
+            relation_edges_map,
+            base_word,
+            build_relation_edge(
+                relation_type="inflection",
+                target=inferred,
+                label=label,
+                direction="outgoing",
+                navigable=True,
+                display="exchange",
+                source="derived",
+            ),
+        )
+        # Add parent relation for the inferred plural if it does not already
+        # have a plural relation.  This lets mixed-POS words like "part"
+        # (where "parts" is already a third-person singular form) also
+        # acquire a plural parent relation so noun senses are queryable.
+        existing_parents = parent_relations_map.get(inf_key, [])
+        has_plural_parent = any(
+            p.get("_inflection_label") == label for p in existing_parents
+        )
+        if not has_plural_parent:
+            new_parent = build_relation(entry["word"], "原形")
+            new_parent["_inflection_label"] = label
+            parent_relations_map.setdefault(inf_key, [])
+            parent_relations_map[inf_key].append(new_parent)
+
+    print(f"Stage C-1 complete: {len(child_relations_map)} bases with child relations")
+    return child_relations_map, parent_relations_map, relation_edges_map, blocked_surface_forms_by_base
+
+
+def finalize_standalone_entries(
+    standalone_cache: dict[str, dict[str, Any]],
+    child_relations_map: dict[str, list[dict[str, str]]],
+    parent_relations_map: dict[str, list[dict[str, str]]],
+    relation_edges_map: dict[str, list[dict[str, Any]]],
+) -> dict[str, dict[str, Any]]:
+    """Stage C-2: Apply relation metadata to standalone entries."""
+    print("Stage C-2: Finalizing standalone entries...")
     finalized_entries: dict[str, dict[str, Any]] = {}
     for word_key, entry in standalone_cache.items():
         parent_relation = None
@@ -1347,7 +1532,20 @@ def main():
         if cross_references:
             finalized_entries[word_key]["cross_references"] = cross_references
 
-    print("Phase 3: Processing link entries...")
+    print("Stage C-2 complete")
+    return finalized_entries
+
+
+def process_link_entries(
+    finalized_entries: dict[str, dict[str, Any]],
+    final_target: dict[str, str],
+    parent_relations_map: dict[str, list[dict[str, str]]],
+    child_relations_map: dict[str, list[dict[str, str]]],
+    blocked_surface_forms_by_base: dict[str, set[str]],
+    lookup: dict[str, str],
+) -> int:
+    """Stage C-3: Process link entries (@ @ @ LINK=) into inflections or aliases."""
+    print("Stage C-3: Processing link entries...")
     link_processed = 0
     link_skipped = 0
 
@@ -1465,9 +1663,13 @@ def main():
         if link_processed % REPORT_INTERVAL == 0:
             print(f"  Links processed: {link_processed}")
 
-    print(f"Phase 3 complete: {link_processed} links, {link_skipped} skipped")
+    print(f"Stage C-3 complete: {link_processed} links, {link_skipped} skipped")
+    return link_processed
 
-    print("Phase 4: Materializing missing inflection entries...")
+
+def materialize_missing_inflections(finalized_entries: dict[str, dict[str, Any]]) -> int:
+    """Stage C-4: Create inflection entries for missing child relation forms."""
+    print("Stage C-4: Materializing missing inflection entries...")
     materialized = 0
     for word_key, entry in list(finalized_entries.items()):
         if entry.get("entry_kind") != "standalone":
@@ -1481,9 +1683,13 @@ def main():
             finalized_entries[form_key] = create_inflection_entry(form, entry, relation["label"])
             materialized += 1
 
-    print(f"Phase 4 complete: {materialized} entries materialized")
+    print(f"Stage C-4 complete: {materialized} entries materialized")
+    return materialized
 
-    print("Preparing shards...")
+
+def write_shards(finalized_entries: dict[str, dict[str, Any]], total: int, processed: int, link_processed: int) -> None:
+    """Stage D: Split entries into shards and write JSON files."""
+    print("Stage D: Preparing shards...")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     shards: dict[str, dict[str, dict[str, Any]]] = {}
     for word_key, entry in finalized_entries.items():

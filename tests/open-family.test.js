@@ -105,7 +105,6 @@ test('open family relation metadata stays correct', () => {
   assert.ok(openRelationRows.includes('过去式:opened:exchange:true'))
   assert.ok(openRelationRows.includes('过去分词:opened:exchange:true'))
   assert.ok(openRelationRows.includes('现在分词:opening:exchange:true'))
-  assert.ok(openRelationRows.includes('复数:opens:exchange:true'))
 
   assert.equal(oDict.opening.display_word, 'opening')
   assert.equal(oDict.opening.parent_relation, null)
@@ -503,30 +502,26 @@ test('leaves has inflection_sources with separate labels per relation', () => {
 
   assert.ok(leaves.inflection_sources, 'leaves should have inflection_sources')
   assert.ok(Array.isArray(leaves.relations), 'leaves should have relations array')
-  // leaf/复数 + leave/第三人称单数 + leave/复数 = 3 distinct sources
-  assert.equal(leaves.inflection_sources.length, 3, `leaves should have exactly 3 inflection_sources, got: ${leaves.inflection_sources?.length || 0}`)
+  // leaf/复数 + leave/第三人称单数 = 2 distinct sources (leave/复数 removed in v3.0.0)
+  assert.equal(leaves.inflection_sources.length, 2, `leaves should have exactly 2 inflection_sources, got: ${leaves.inflection_sources?.length || 0}`)
 
   const leafPlural = leaves.inflection_sources.find((s) => s.word === 'leaf' && s.label === '复数')
   const leaveThirdPs = leaves.inflection_sources.find((s) => s.word === 'leave' && s.label === '第三人称单数')
-  const leavePlural = leaves.inflection_sources.find((s) => s.word === 'leave' && s.label === '复数')
 
   assert.ok(leafPlural, `leaves should have source leaf/复数`)
   assert.ok(leaveThirdPs, `leaves should have source leave/第三人称单数`)
-  assert.ok(leavePlural, `leaves should have source leave/复数`)
 
   const originRows = leaves.relations
     .filter((relation) => relation.type === 'origin')
     .map((relation) => `${relation.label}:${relation.target}`)
   assert.ok(originRows.includes('复数:leaf'), `leaves relations should include 复数:leaf, got: ${originRows}`)
   assert.ok(originRows.includes('第三人称单数:leave'), `leaves relations should include 第三人称单数:leave, got: ${originRows}`)
-  assert.ok(originRows.includes('复数:leave'), `leaves relations should include 复数:leave, got: ${originRows}`)
 
   const originPosScopes = leaves.relations
     .filter((relation) => relation.type === 'origin')
     .map((relation) => `${relation.label}:${relation.target}:${(relation.pos_scope || []).join(',')}`)
   assert.ok(originPosScopes.includes('复数:leaf:n'), `leaves origin should preserve noun scope for leaf, got: ${originPosScopes}`)
   assert.ok(originPosScopes.includes('第三人称单数:leave:v'), `leaves origin should preserve verb scope for leave third-person, got: ${originPosScopes}`)
-  assert.ok(originPosScopes.includes('复数:leave:n'), `leaves origin should preserve noun scope for leave plural, got: ${originPosScopes}`)
 })
 
 test('scripts inflection entry carries only its own exchange slots, not parent verb timeline', () => {
@@ -549,7 +544,6 @@ test('scripts inflection entry carries only its own exchange slots, not parent v
     }, new Map())
 
   assert.ok(exchangeValues.has('3'), `scripts exchange should have 3 slot, got: ${scripts.exchange}`)
-  assert.ok(exchangeValues.has('s'), `scripts exchange should have s slot, got: ${scripts.exchange}`)
   assert.ok(!exchangeValues.has('p'), `scripts exchange should NOT have p slot, got: ${scripts.exchange}`)
   assert.ok(!exchangeValues.has('d'), `scripts exchange should NOT have d slot, got: ${scripts.exchange}`)
   assert.ok(!exchangeValues.has('i'), `scripts exchange should NOT have i slot, got: ${scripts.exchange}`)
@@ -559,11 +553,11 @@ test('scripts inflection entry carries only its own exchange slots, not parent v
   assert.ok(relationTypes.includes('origin'), `scripts should have origin relations`)
   assert.ok(!relationTypes.includes('inflection'), `scripts should NOT have inflection relations`)
 
-  // should have both noun and verb origin sources
-  assert.ok(scripts.inflection_sources, 'scripts should have inflection_sources')
-  const sourceLabels = scripts.inflection_sources.map((s) => s.label)
-  assert.ok(sourceLabels.includes('第三人称单数'), `scripts should have 第三人称单数 source, got: ${sourceLabels}`)
-  assert.ok(sourceLabels.includes('复数'), `scripts should have 复数 source, got: ${sourceLabels}`)
+  // scripts is both third-person singular and plural (inferred in v3.0.0)
+  const originRelations = (scripts.relations || []).filter((r) => r.type === 'origin')
+  const originLabels = originRelations.map((r) => r.label)
+  assert.ok(originLabels.includes('第三人称单数'), `scripts should have 第三人称单数 origin, got: ${originLabels}`)
+  assert.ok(originLabels.includes('复数'), `scripts should have 复数 origin via inference, got: ${originLabels}`)
 })
 
 test('batch irregular noun plurals preserve correct relations', () => {
