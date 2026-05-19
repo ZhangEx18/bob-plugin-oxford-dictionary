@@ -1377,6 +1377,58 @@ def build_relation_metadata(
                     new_relation["_inflection_label"] = label
                     parent_relations_map[form_key].append(new_relation)
 
+        # Infer plural forms for nouns that have a self-plural (s:word) but also
+        # a regular 3rd-person form (3:xxx) where xxx doubles as a plural.
+        # Example: "score" has s:score (self-plural) and 3:scores, so "scores"
+        # should also be queryable as a plural of "score".
+        s_forms = exchange_values.get("s", [])
+        thirdps_forms = exchange_values.get("3", [])
+        if (
+            s_forms
+            and thirdps_forms
+            and base_word not in IRREGULAR_PLURALS
+            and "n" in parse_pos_keys(entry.get("pos", ""))
+        ):
+            if any(f.lower() == base_word for f in s_forms):
+                for form in thirdps_forms:
+                    form_key = form.lower()
+                    if form_key == base_word:
+                        continue
+                    if form_key in blocked_forms:
+                        continue
+                    if not is_regular_inflection(base_word, form_key, "s"):
+                        continue
+                    label = "复数"
+                    child_relations_map.setdefault(base_word, [])
+                    relation = build_relation(form, label)
+                    if relation not in child_relations_map[base_word]:
+                        child_relations_map[base_word].append(relation)
+                    append_relation_edge(
+                        relation_edges_map,
+                        base_word,
+                        build_relation_edge(
+                            relation_type="inflection",
+                            target=form,
+                            label=label,
+                            direction="outgoing",
+                            navigable=True,
+                            display="exchange",
+                            source="derived",
+                        ),
+                    )
+                    if form_key not in parent_relations_map:
+                        parent_relations_map[form_key] = [build_relation(entry["word"], "原形")]
+                        parent_relations_map[form_key][0]["_inflection_label"] = label
+                    else:
+                        existing_parents = parent_relations_map[form_key]
+                        has_plural_parent = any(
+                            p.get("_inflection_label") == label for p in existing_parents
+                        )
+                        if not has_plural_parent:
+                            new_parent = build_relation(entry["word"], "原形")
+                            new_parent["_inflection_label"] = label
+                            parent_relations_map[form_key].append(new_parent)
+
     # Infer plural forms for nouns that lack an explicit 's' slot in their exchange.
     for entry in standalone_cache.values():
         base_word = entry["word"].lower()

@@ -141,16 +141,16 @@ test('leaves aggregates parts from both leaf and leave inflection sources', asyn
   const parts = JSON.parse(JSON.stringify(result.toDict.parts))
   assert.ok(parts.length >= 2, `leaves should have at least 2 parts, got: ${parts.length}`)
 
-  const nounParts = parts.filter((part) => part.part === 'n.')
-  assert.equal(nounParts.length, 1, `leaves should merge noun parts, got: ${JSON.stringify(parts)}`)
-  assert.deepEqual(nounParts[0]?.means || [], [
-    '叶,叶片；有…状叶的；(纸)页；薄金属片；活动桌板\n[leaf 的复数]',
+  const leafPart = parts.find((part) => part.part === '[leaf 的复数]')
+  assert.ok(leafPart, `leaves should have [leaf 的复数] part, got: ${JSON.stringify(parts)}`)
+  assert.deepEqual(leafPart.means, [
+    '叶,叶片', '有…状叶的', '(纸)页', '薄金属片', '活动桌板',
   ])
 
-  const verbParts = parts.filter((part) => part.part === 'v.')
-  assert.equal(verbParts.length, 1, `leaves should merge verb parts, got: ${JSON.stringify(parts)}`)
-  assert.deepEqual(verbParts[0]?.means || [], [
-    '离开(某人或某处),离开居住地点；遗弃；忘了带；使保留；留下备用(或销售等)；使发生；发布；不立刻做；把…留交；(去世时)遗赠；(死后)留下(家人)；剩余\n[leave 的 第三人称单数]',
+  const leavePart = parts.find((part) => part.part === '[leave 的 第三人称单数]')
+  assert.ok(leavePart, `leaves should have [leave 的 第三人称单数] part, got: ${JSON.stringify(parts)}`)
+  assert.deepEqual(leavePart.means, [
+    '离开(某人或某处),离开居住地点', '遗弃', '忘了带', '使保留', '留下备用(或销售等)', '使发生', '发布', '不立刻做', '把…留交', '(去世时)遗赠', '(死后)留下(家人)', '剩余',
   ])
 })
 
@@ -222,10 +222,10 @@ test('scripts as mixed-POS inflection shows both noun and verb senses', async ()
   const parts = JSON.parse(JSON.stringify(result.toDict.parts))
 
   // scripts is both plural and third-person singular (v3.0.0 plural inference)
-  const nounPart = parts.find((part) => part.part === 'n.')
+  const nounPart = parts.find((part) => part.part === '[script 的复数]')
   assert.ok(nounPart, `scripts should include noun meanings via plural inference, got: ${JSON.stringify(parts)}`)
 
-  const verbPart = parts.find((part) => part.part === 'v.')
+  const verbPart = parts.find((part) => part.part === '[script 的 第三人称单数]')
   assert.ok(verbPart, `scripts should include verb meanings, got: ${JSON.stringify(parts)}`)
 
   const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
