@@ -599,6 +599,9 @@ def _looks_like_superlative(base_word: str, form: str) -> bool:
     return False
 
 
+# Primary processing: migrates comparative/superlative forms from s-slot
+# to c/sup slots during data generation. The TypeScript runtime has a
+# safety net for any edge cases missed here (~239 entries).
 def move_surface_comparatives_into_exchange_slots(
     exchange_values: dict[str, list[str]], pos_summary: str, base_word: str = ""
 ) -> dict[str, list[str]]:
@@ -856,22 +859,19 @@ def classify_inflection_parent(entry: dict[str, Any], form_key: str) -> str | No
     return None
 
 
-def apply_relation_metadata(entry: dict[str, Any], *, entry_kind: str, display_word: str,
-                            parent_relation: dict[str, str] | None,
-                            child_relations: list[dict[str, str]],
-                            inflection_sources: list[dict[str, str]] | None = None,
-                            relations: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    next_entry = {
+def apply_relation_metadata(
+    entry: dict[str, Any],
+    *,
+    entry_kind: str,
+    display_word: str,
+    relations: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
         **entry,
         "entry_kind": entry_kind,
         "display_word": display_word,
-        "parent_relation": parent_relation,
-        "child_relations": child_relations,
         "relations": relations or [],
     }
-    if inflection_sources:
-        next_entry["inflection_sources"] = inflection_sources
-    return next_entry
 
 
 def find_standalone_plural_parent(word: str, finalized_entries: dict[str, dict[str, Any]]) -> str | None:
@@ -1033,8 +1033,6 @@ def create_inflection_entry(form: str, parent_entry: dict[str, Any], relation_la
         entry,
         entry_kind="inflection",
         display_word=parent_entry["word"],
-        parent_relation=build_relation(parent_entry["word"], "原形"),
-        child_relations=[],
         relations=[
             build_relation_edge(
                 relation_type="origin",
@@ -1269,8 +1267,6 @@ def parse_non_link_entries(lookup: dict[str, str]) -> dict[str, dict[str, Any]]:
             data,
             entry_kind="standalone",
             display_word=word,
-            parent_relation=None,
-            child_relations=[],
         )
         processed += 1
         if processed % REPORT_INTERVAL == 0:
@@ -1301,7 +1297,6 @@ def main():
 
     finalized_entries = finalize_standalone_entries(
         standalone_cache,
-        child_relations_map,
         parent_relations_map,
         relation_edges_map,
     )
@@ -1310,7 +1305,6 @@ def main():
         finalized_entries,
         final_target,
         parent_relations_map,
-        child_relations_map,
         blocked_surface_forms_by_base,
         lookup,
     )
@@ -1497,7 +1491,6 @@ def build_relation_metadata(
 
 def finalize_standalone_entries(
     standalone_cache: dict[str, dict[str, Any]],
-    child_relations_map: dict[str, list[dict[str, str]]],
     parent_relations_map: dict[str, list[dict[str, str]]],
     relation_edges_map: dict[str, list[dict[str, Any]]],
 ) -> dict[str, dict[str, Any]]:
@@ -1579,7 +1572,6 @@ def finalize_standalone_entries(
         if parent_relation:
             clean_parent_relation = {k: v for k, v in parent_relation.items() if not k.startswith("_")}
 
-        inflection_sources = []
         relations = [*relation_edges_map.get(word_key, [])]
         if clean_parent_relation:
             parent_label = primary_parent.get("_inflection_label", "原形") if potential_parents else "原形"
@@ -1599,10 +1591,6 @@ def finalize_standalone_entries(
         if len(potential_parents) > 1:
             for pp in potential_parents:
                 labels = pp.get("_inflection_label", "")
-                inflection_sources.append({
-                    "word": pp["word"],
-                    "label": labels,
-                })
                 append_relation_edge(
                     relation_edges_map,
                     word_key,
@@ -1619,12 +1607,7 @@ def finalize_standalone_entries(
                 )
             relations = [*relation_edges_map.get(word_key, [])]
 
-        cross_references = []
         if word_key in HOMOGRAPH_PROTECTED_FORMS:
-            cross_references = [
-                {"word": base, "label": label}
-                for base, label in HOMOGRAPH_PROTECTED_FORMS[word_key]
-            ]
             for base, label in HOMOGRAPH_PROTECTED_FORMS[word_key]:
                 append_relation_edge(
                     relation_edges_map,
@@ -1645,13 +1628,8 @@ def finalize_standalone_entries(
             entry,
             entry_kind="standalone",
             display_word=entry["word"],
-            parent_relation=clean_parent_relation,
-            child_relations=child_relations_map.get(word_key, []),
-            inflection_sources=inflection_sources,
             relations=relations,
         )
-        if cross_references:
-            finalized_entries[word_key]["cross_references"] = cross_references
 
     print("Stage C-2 complete")
     return finalized_entries
@@ -1661,7 +1639,6 @@ def process_link_entries(
     finalized_entries: dict[str, dict[str, Any]],
     final_target: dict[str, str],
     parent_relations_map: dict[str, list[dict[str, str]]],
-    child_relations_map: dict[str, list[dict[str, str]]],
     blocked_surface_forms_by_base: dict[str, set[str]],
     lookup: dict[str, str],
 ) -> int:
@@ -1694,11 +1671,20 @@ def process_link_entries(
                     parent_relation = build_relation(parent_entry["word"], "原形")
                     display_word = parent_entry["word"]
                     source_entry = parent_entry
-                    child_relations_map.setdefault(plural_parent, [])
                     relation = build_relation(word, "复数")
-                    if relation not in child_relations_map[plural_parent]:
-                        child_relations_map[plural_parent].append(relation)
-                        parent_entry["child_relations"] = child_relations_map[plural_parent]
+                    append_relation_edge(
+                        relation_edges_map,
+                        plural_parent,
+                        build_relation_edge(
+                            relation_type="inflection",
+                            target=word,
+                            label="复数",
+                            direction="outgoing",
+                            navigable=True,
+                            display="exchange",
+                            source="derived",
+                        ),
+                    )
         elif has_standalone_entry(parent_relation["word"], lookup):
             display_word = parent_relation["word"]
 
@@ -1729,7 +1715,6 @@ def process_link_entries(
 
         clean_parent_relation = {k: v for k, v in parent_relation.items() if not k.startswith("_")} if parent_relation else None
         relations: list[dict[str, Any]] = []
-        inflection_sources: list[dict[str, str]] = []
         if clean_parent_relation:
             relation_label = inflection_label or "原形"
             relations.append(
@@ -1749,10 +1734,6 @@ def process_link_entries(
             relations = []
             for index, pp in enumerate(potential_parents):
                 label = pp.get("_inflection_label", "原形")
-                inflection_sources.append({
-                    "word": pp["word"],
-                    "label": label,
-                })
                 relations.append(
                     build_relation_edge(
                         relation_type="origin",
@@ -1774,9 +1755,6 @@ def process_link_entries(
             },
             entry_kind=entry_kind,
             display_word=display_word,
-            parent_relation=clean_parent_relation,
-            child_relations=[],
-            inflection_sources=inflection_sources,
             relations=relations,
         )
         finalized_entries[word_key] = data
@@ -1796,8 +1774,12 @@ def materialize_missing_inflections(finalized_entries: dict[str, dict[str, Any]]
         if entry.get("entry_kind") != "standalone":
             continue
 
-        for relation in entry.get("child_relations", []):
-            form = relation["word"]
+        for relation in entry.get("relations", []):
+            if relation.get("relation_type") != "inflection":
+                continue
+            if relation.get("direction") != "outgoing":
+                continue
+            form = relation["target"]
             form_key = form.lower()
             if form_key in finalized_entries:
                 continue

@@ -39,22 +39,6 @@ function collectRelationTargets(entry) {
     }
   }
 
-  if (entry.parent_relation?.target) {
-    targets.push(entry.parent_relation.target)
-  }
-
-  if (Array.isArray(entry.child_relations)) {
-    for (const child of entry.child_relations) {
-      if (child?.target) targets.push(child.target)
-    }
-  }
-
-  if (Array.isArray(entry.cross_references)) {
-    for (const xref of entry.cross_references) {
-      if (xref?.target) targets.push(xref.target)
-    }
-  }
-
   return targets
 }
 
@@ -141,9 +125,8 @@ test('inflection entries have at least one origin relation', () => {
 
     const hasOrigin = Array.isArray(entry.relations) &&
       entry.relations.some(r => r?.type === 'origin')
-    const hasLegacyOrigin = !!entry.parent_relation?.target
 
-    if (!hasOrigin && !hasLegacyOrigin) {
+    if (!hasOrigin) {
       failures.push(key)
       if (failures.length >= 10) break
     }
@@ -212,19 +195,6 @@ test('all relation targets exist in global dictionary', () => {
   }
   assert.equal(failures.length, 0,
     `${failures.length} dangling relation targets: ${JSON.stringify(failures.slice(0, 3))}`)
-})
-
-test('inflection entries do not have child_relations', () => {
-  const failures = []
-  for (const [key, entry] of entryList) {
-    if (entry.entry_kind !== 'inflection') continue
-    if (Array.isArray(entry.child_relations) && entry.child_relations.length > 0) {
-      failures.push(key)
-      if (failures.length >= 10) break
-    }
-  }
-  assert.equal(failures.length, 0,
-    `${failures.length} inflection entries with unexpected child_relations: ${failures.slice(0, 5).join(', ')}`)
 })
 
 test('alias entries do not have relations array', () => {
@@ -315,28 +285,6 @@ test('pos is either absent or a non-empty string', () => {
   }
   assert.equal(failures.length, 0,
     `${failures.length} entries with invalid pos: ${JSON.stringify(failures.slice(0, 3))}`)
-})
-
-// ---------------------------------------------------------------------------
-// Cross-model consistency (old vs new relation model)
-// ---------------------------------------------------------------------------
-
-test('if relations array exists, parent_relation should be derivable from it', () => {
-  let mismatched = 0
-  for (const [key, entry] of entryList) {
-    if (!Array.isArray(entry.relations) || !entry.parent_relation) continue
-    const parentFromLegacy = entry.parent_relation.target
-    if (!parentFromLegacy) continue
-    const parentFromRelations = entry.relations
-      .filter(r => r?.type === 'origin')
-      .map(r => r.target)
-    if (parentFromRelations.length > 0 &&
-        !parentFromRelations.some(t => t && t.toLowerCase() === parentFromLegacy.toLowerCase())) {
-      mismatched++
-    }
-  }
-  assert.ok(mismatched < 100,
-    `${mismatched} entries where parent_relation disagrees with relations array origin targets`)
 })
 
 test('entry_kind distribution is within expected ranges', () => {

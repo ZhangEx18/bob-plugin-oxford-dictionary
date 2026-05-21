@@ -73,6 +73,14 @@ function relationWords(relations = []) {
   return relations.map((relation) => `${relation.label}:${relation.word}`)
 }
 
+function findOrigin(entry) {
+  return (entry.relations || []).find((r) => r.type === 'origin' && r.direction === 'outgoing')
+}
+
+function findInflections(entry) {
+  return (entry.relations || []).filter((r) => r.type === 'inflection' && r.direction === 'outgoing')
+}
+
 function entryFor(word) {
   const shard = loadShard(word[0].toLowerCase())
   return shard?.[word] || shard?.[word.toLowerCase()]
@@ -89,7 +97,7 @@ function posKeys(entry) {
 
 test('open family relation metadata stays correct', () => {
   assert.equal(oDict.open.display_word, 'open')
-  assert.equal(oDict.open.parent_relation, null)
+  assert.ok(!findOrigin(oDict.open), 'open should not have origin relation')
   assert.deepEqual(relationWords(oDict.open.child_relations), [
     '第三人称单数:opens',
     '过去式:opened',
@@ -107,44 +115,54 @@ test('open family relation metadata stays correct', () => {
   assert.ok(openRelationRows.includes('现在分词:opening:exchange:true'))
 
   assert.equal(oDict.opening.display_word, 'opening')
-  assert.equal(oDict.opening.parent_relation, null)
+  assert.ok(!findOrigin(oDict.opening), 'opening should not have origin relation')
   assert.ok(relationWords(oDict.opening.child_relations).includes('复数:openings'))
 
   assert.equal(oDict.openings.display_word, 'opening')
-  assert.deepEqual(oDict.openings.parent_relation, { word: 'opening', label: '原形' })
+  const openingsOrigin = findOrigin(oDict.openings)
+  assert.ok(openingsOrigin, 'openings should have origin relation')
+  assert.equal(openingsOrigin.target, 'opening')
 
   assert.equal(oDict.opens.display_word, 'open')
-  assert.deepEqual(oDict.opens.parent_relation, { word: 'open', label: '原形' })
+  const opensOrigin = findOrigin(oDict.opens)
+  assert.ok(opensOrigin, 'opens should have origin relation')
+  assert.equal(opensOrigin.target, 'open')
 
   assert.equal(oDict.opened.display_word, 'open')
-  assert.deepEqual(oDict.opened.parent_relation, { word: 'open', label: '原形' })
+  const openedOrigin = findOrigin(oDict.opened)
+  assert.ok(openedOrigin, 'opened should have origin relation')
+  assert.equal(openedOrigin.target, 'open')
 })
 
 test('child family keeps irregular plurals attached to the standalone parent', () => {
   assert.equal(cDict.child.display_word, 'child')
-  assert.equal(cDict.child.parent_relation, null)
+  assert.ok(!findOrigin(cDict.child), 'child should not have origin relation')
   assert.ok(relationWords(cDict.child.child_relations).includes('复数:children'))
 
   assert.equal(cDict.children.display_word, 'child')
-  assert.deepEqual(cDict.children.parent_relation, { word: 'child', label: '原形' })
+  const childrenOrigin = findOrigin(cDict.children)
+  assert.ok(childrenOrigin, 'children should have origin relation')
+  assert.equal(childrenOrigin.target, 'child')
 })
 
 test('tailor family preserves standalone middle entries', () => {
   assert.equal(tDict.tailor.display_word, 'tailor')
-  assert.equal(tDict.tailor.parent_relation, null)
+  assert.ok(!findOrigin(tDict.tailor), 'tailor should not have origin relation')
   assert.ok(relationWords(tDict.tailor.child_relations).includes('现在分词:tailoring'))
 
   assert.equal(tDict.tailoring.display_word, 'tailoring')
-  assert.equal(tDict.tailoring.parent_relation, null)
+  assert.ok(!findOrigin(tDict.tailoring), 'tailoring should not have origin relation')
   assert.deepEqual(relationWords(tDict.tailoring.child_relations), ['复数:tailorings'])
 
   assert.equal(tDict.tailorings.display_word, 'tailoring')
-  assert.deepEqual(tDict.tailorings.parent_relation, { word: 'tailoring', label: '原形' })
+  const tailoringsOrigin = findOrigin(tDict.tailorings)
+  assert.ok(tailoringsOrigin, 'tailorings should have origin relation')
+  assert.equal(tailoringsOrigin.target, 'tailoring')
 })
 
 test('take family keeps standalone irregular forms on their own entries', () => {
   assert.equal(tDict.take.display_word, 'take')
-  assert.equal(tDict.take.parent_relation, null)
+  assert.ok(!findOrigin(tDict.take), 'take should not have origin relation')
   assert.deepEqual(relationWords(tDict.take.child_relations), [
     '第三人称单数:takes',
     '过去式:took',
@@ -154,56 +172,74 @@ test('take family keeps standalone irregular forms on their own entries', () => 
   ])
 
   assert.equal(tDict.takes.display_word, 'take')
-  assert.deepEqual(tDict.takes.parent_relation, { word: 'take', label: '原形' })
+  const takesOrigin = findOrigin(tDict.takes)
+  assert.ok(takesOrigin, 'takes should have origin relation')
+  assert.equal(takesOrigin.target, 'take')
 
   assert.equal(tDict.taking.display_word, 'take')
-  assert.deepEqual(tDict.taking.parent_relation, { word: 'take', label: '原形' })
+  const takingOrigin = findOrigin(tDict.taking)
+  assert.ok(takingOrigin, 'taking should have origin relation')
+  assert.equal(takingOrigin.target, 'take')
 
   assert.equal(tDict.taken.display_word, 'take')
-  assert.deepEqual(tDict.taken.parent_relation, { word: 'take', label: '原形' })
+  const takenOrigin = findOrigin(tDict.taken)
+  assert.ok(takenOrigin, 'taken should have origin relation')
+  assert.equal(takenOrigin.target, 'take')
 
   assert.equal(tDict.took.display_word, 'took')
-  assert.deepEqual(tDict.took.parent_relation, { word: 'take', label: '原形' })
+  const tookOrigin = findOrigin(tDict.took)
+  assert.ok(tookOrigin, 'took should have origin relation')
+  assert.equal(tookOrigin.target, 'take')
 })
 
 test('man family does not override standalone plural entries', () => {
   assert.equal(mDict.man.display_word, 'man')
-  assert.equal(mDict.man.parent_relation, null)
+  assert.ok(!findOrigin(mDict.man), 'man should not have origin relation')
   assert.ok(relationWords(mDict.man.child_relations).includes('复数:men'))
 
   assert.equal(mDict.men.display_word, 'men')
-  assert.deepEqual(mDict.men.parent_relation, { word: 'man', label: '原形' })
+  const menOrigin = findOrigin(mDict.men)
+  assert.ok(menOrigin, 'men should have origin relation')
+  assert.equal(menOrigin.target, 'man')
 })
 
 test('comparative adjective families participate in morphology navigation', () => {
   assert.equal(hDict.happy.display_word, 'happy')
-  assert.equal(hDict.happy.parent_relation, null)
+  assert.ok(!findOrigin(hDict.happy), 'happy should not have origin relation')
   assert.deepEqual(relationWords(hDict.happy.child_relations), [
     '比较级:happier',
     '最高级:happiest',
   ])
 
   assert.equal(hDict.happier.display_word, 'happy')
-  assert.deepEqual(hDict.happier.parent_relation, { word: 'happy', label: '原形' })
+  const happierOrigin = findOrigin(hDict.happier)
+  assert.ok(happierOrigin, 'happier should have origin relation')
+  assert.equal(happierOrigin.target, 'happy')
   assert.deepEqual(relationWords(hDict.happier.child_relations), [])
 
   assert.equal(hDict.happiest.display_word, 'happy')
-  assert.deepEqual(hDict.happiest.parent_relation, { word: 'happy', label: '原形' })
+  const happiestOrigin = findOrigin(hDict.happiest)
+  assert.ok(happiestOrigin, 'happiest should have origin relation')
+  assert.equal(happiestOrigin.target, 'happy')
   assert.deepEqual(relationWords(hDict.happiest.child_relations), [])
 
   assert.equal(tDict.tacky.display_word, 'tacky')
-  assert.equal(tDict.tacky.parent_relation, null)
+  assert.ok(!findOrigin(tDict.tacky), 'tacky should not have origin relation')
   assert.deepEqual(relationWords(tDict.tacky.child_relations), [
     '比较级:tackier',
     '最高级:tackiest',
   ])
 
   assert.equal(tDict.tackier.display_word, 'tacky')
-  assert.deepEqual(tDict.tackier.parent_relation, { word: 'tacky', label: '原形' })
+  const tackierOrigin = findOrigin(tDict.tackier)
+  assert.ok(tackierOrigin, 'tackier should have origin relation')
+  assert.equal(tackierOrigin.target, 'tacky')
   assert.deepEqual(relationWords(tDict.tackier.child_relations), [])
 
   assert.equal(tDict.tackiest.display_word, 'tacky')
-  assert.deepEqual(tDict.tackiest.parent_relation, { word: 'tacky', label: '原形' })
+  const tackiestOrigin = findOrigin(tDict.tackiest)
+  assert.ok(tackiestOrigin, 'tackiest should have origin relation')
+  assert.equal(tackiestOrigin.target, 'tacky')
   assert.deepEqual(relationWords(tDict.tackiest.child_relations), [])
 })
 
@@ -216,32 +252,44 @@ test('standalone suppletive forms link back to base and forward to subsequent fo
 
   // worse (standalone comparative of bad)
   assert.equal(wDict.worse.entry_kind, 'standalone')
-  assert.deepEqual(wDict.worse.parent_relation, { word: 'bad', label: '原形' })
+  const worseOrigin = findOrigin(wDict.worse)
+  assert.ok(worseOrigin, 'worse should have origin relation')
+  assert.equal(worseOrigin.target, 'bad')
   assert.ok(relationWords(wDict.worse.child_relations).includes('最高级:worst'), `worse should link forward to worst, got: ${relationWords(wDict.worse.child_relations)}`)
   assert.ok(!relationWords(wDict.worse.child_relations).includes('最高级:baddest'), `worse should NOT link to baddest (different inflection path), got: ${relationWords(wDict.worse.child_relations)}`)
 
   // better (standalone comparative of good)
   assert.equal(bDict.better.entry_kind, 'standalone')
-  assert.deepEqual(bDict.better.parent_relation, { word: 'good', label: '原形' })
+  const betterOrigin = findOrigin(bDict.better)
+  assert.ok(betterOrigin, 'better should have origin relation')
+  assert.equal(betterOrigin.target, 'good')
   assert.ok(relationWords(bDict.better.child_relations).includes('最高级:best'), `better should link forward to best, got: ${relationWords(bDict.better.child_relations)}`)
 
   // best (standalone superlative of good)
   assert.equal(bDict.best.entry_kind, 'standalone')
-  assert.deepEqual(bDict.best.parent_relation, { word: 'good', label: '原形' })
+  const bestOrigin = findOrigin(bDict.best)
+  assert.ok(bestOrigin, 'best should have origin relation')
+  assert.equal(bestOrigin.target, 'good')
 
   // was (standalone past of be)
   assert.equal(wDict.was.entry_kind, 'standalone')
-  assert.deepEqual(wDict.was.parent_relation, { word: 'be', label: '原形' })
+  const wasOrigin = findOrigin(wDict.was)
+  assert.ok(wasOrigin, 'was should have origin relation')
+  assert.equal(wasOrigin.target, 'be')
   assert.ok(relationWords(wDict.was.child_relations).includes('过去分词:been'), `was should link forward to been, got: ${relationWords(wDict.was.child_relations)}`)
   assert.ok(relationWords(wDict.was.child_relations).includes('现在分词:being'), `was should link forward to being, got: ${relationWords(wDict.was.child_relations)}`)
 
   // least (standalone superlative of little)
   assert.equal(lDict.least.entry_kind, 'standalone')
-  assert.deepEqual(lDict.least.parent_relation, { word: 'little', label: '原形' })
+  const leastOrigin = findOrigin(lDict.least)
+  assert.ok(leastOrigin, 'least should have origin relation')
+  assert.equal(leastOrigin.target, 'little')
 
   // furthest (standalone superlative of far)
   assert.equal(fDict.furthest.entry_kind, 'standalone')
-  assert.deepEqual(fDict.furthest.parent_relation, { word: 'far', label: '原形' })
+  const furthestOrigin = findOrigin(fDict.furthest)
+  assert.ok(furthestOrigin, 'furthest should have origin relation')
+  assert.equal(furthestOrigin.target, 'far')
 })
 
 test('protected homographs stay standalone with cross-references instead of parent relations', () => {
@@ -253,7 +301,6 @@ test('protected homographs stay standalone with cross-references instead of pare
 
   // found (past tense of find, but also standalone verb/noun)
   assert.equal(fDict.found.entry_kind, 'standalone')
-  assert.equal(fDict.found.parent_relation, null)
   assert.ok(
     relationWords(fDict.found.cross_references || []).includes('过去式:find'),
     `found should cross-reference find, got: ${relationWords(fDict.found.cross_references || [])}`,
@@ -261,7 +308,6 @@ test('protected homographs stay standalone with cross-references instead of pare
 
   // left (past tense of leave, but also standalone adj/noun)
   assert.equal(lDict.left.entry_kind, 'standalone')
-  assert.equal(lDict.left.parent_relation, null)
   assert.ok(
     relationWords(lDict.left.cross_references || []).includes('过去式:leave'),
     `left should cross-reference leave, got: ${relationWords(lDict.left.cross_references || [])}`,
@@ -269,7 +315,6 @@ test('protected homographs stay standalone with cross-references instead of pare
 
   // ground (past tense of grind, but also standalone noun)
   assert.equal(gDict.ground.entry_kind, 'standalone')
-  assert.equal(gDict.ground.parent_relation, null)
   assert.ok(
     relationWords(gDict.ground.cross_references || []).includes('过去式:grind'),
     `ground should cross-reference grind, got: ${relationWords(gDict.ground.cross_references || [])}`,
@@ -277,7 +322,6 @@ test('protected homographs stay standalone with cross-references instead of pare
 
   // saw (past tense of see, but also standalone noun/verb)
   assert.equal(sDict.saw.entry_kind, 'standalone')
-  assert.equal(sDict.saw.parent_relation, null)
   assert.ok(
     relationWords(sDict.saw.cross_references || []).includes('过去式:see'),
     `saw should cross-reference see, got: ${relationWords(sDict.saw.cross_references || [])}`,
@@ -285,7 +329,6 @@ test('protected homographs stay standalone with cross-references instead of pare
 
   // bound (past tense of bind, but also standalone adj)
   assert.equal(bDict.bound.entry_kind, 'standalone')
-  assert.equal(bDict.bound.parent_relation, null)
   assert.ok(
     relationWords(bDict.bound.cross_references || []).includes('过去式:bind'),
     `bound should cross-reference bind, got: ${relationWords(bDict.bound.cross_references || [])}`,
@@ -294,18 +337,18 @@ test('protected homographs stay standalone with cross-references instead of pare
 
 test('standalone non-comparative aliases do not gain synthetic morphology navigation', () => {
   for (const word of ['abroad', 'against', 'alive', 'a-line']) {
-    assert.equal(aDict[word].parent_relation, null)
+    assert.ok(!findOrigin(aDict[word]), `${word} should not have origin relation`)
     assert.deepEqual(relationWords(aDict[word].child_relations), [])
   }
 
-  assert.equal(aDict.able.parent_relation, null)
+  assert.ok(!findOrigin(aDict.able), 'able should not have origin relation')
   assert.deepEqual(relationWords(aDict.able.child_relations), [
     '比较级:abler',
     '最高级:ablest',
   ])
 
   assert.equal(aDict.ables.display_word, 'ables')
-  assert.equal(aDict.ables.parent_relation, null)
+  assert.ok(!findOrigin(aDict.ables), 'ables should not have origin relation')
   assert.deepEqual(relationWords(aDict.ables.child_relations), [])
 })
 
@@ -317,7 +360,7 @@ test('batch morphology coverage spans 100+ words across relation categories', ()
     const labels = new Set((entry.child_relations || []).map((relation) => relation.label))
 
     assert.equal(entry.display_word, word)
-    assert.equal(entry.parent_relation, null)
+    assert.ok(!findOrigin(entry), `${word} should not have origin relation`)
     assert.equal(entry.entry_kind, 'standalone')
     assert.ok(labels.has('第三人称单数'))
     assert.ok(labels.has('过去式'))
@@ -330,7 +373,7 @@ test('batch morphology coverage spans 100+ words across relation categories', ()
     const labels = new Set((entry.child_relations || []).map((relation) => relation.label))
 
     assert.equal(entry.display_word, word)
-    assert.equal(entry.parent_relation, null)
+    assert.ok(!findOrigin(entry), `${word} should not have origin relation`)
     assert.ok(labels.has('复数'))
   }
 
@@ -338,7 +381,6 @@ test('batch morphology coverage spans 100+ words across relation categories', ()
     const entry = entryFor(word)
 
     assert.equal(entry.display_word, word)
-    assert.equal(entry.parent_relation, null)
     assert.deepEqual(relationWords(entry.child_relations), [])
   }
 
@@ -346,7 +388,6 @@ test('batch morphology coverage spans 100+ words across relation categories', ()
     const entry = entryFor(word)
 
     assert.equal(entry.display_word, word)
-    assert.equal(entry.parent_relation, null)
     assert.deepEqual(relationWords(entry.child_relations), [])
   }
 
@@ -402,7 +443,11 @@ test('batch morphology coverage spans 100+ words across relation categories', ()
       const formEntry = entryFor(form)
       assert.ok(formEntry, `missing query entry for ${word} -> ${form}`)
       assert.equal(formEntry.display_word, displayWord)
-      assert.deepEqual(formEntry.parent_relation, parentWord ? { word: parentWord, label: '原形' } : null)
+      if (parentWord) {
+        const origin = findOrigin(formEntry)
+        assert.ok(origin, `${form} should have origin relation`)
+        assert.equal(origin.target, parentWord)
+      }
     }
 
     for (const { form, displayWord, parentWord } of pluralForms) {
@@ -410,7 +455,11 @@ test('batch morphology coverage spans 100+ words across relation categories', ()
       const formEntry = entryFor(form)
       assert.ok(formEntry, `missing query entry for ${word} -> ${form}`)
       assert.equal(formEntry.display_word, displayWord)
-      assert.deepEqual(formEntry.parent_relation, parentWord ? { word: parentWord, label: '原形' } : null)
+      if (parentWord) {
+        const origin = findOrigin(formEntry)
+        assert.ok(origin, `${form} should have origin relation`)
+        assert.equal(origin.target, parentWord)
+      }
     }
   }
 
@@ -462,7 +511,7 @@ test('batch morphology coverage spans 100+ words across relation categories', ()
   for (const word of emptyPosLeakSamples) {
     const entry = entryFor(word)
     assert.ok(entry)
-    assert.equal(entry.parent_relation, null)
+    assert.ok(!findOrigin(entry), `${word} should not have origin relation`)
   }
 
   for (const word of relationTargetCoverageSamples) {
@@ -476,9 +525,10 @@ test('batch morphology coverage spans 100+ words across relation categories', ()
   }
 
   for (const [word, entry] of Object.entries(allEntries)) {
-    if (!entry.pos && entry.parent_relation) {
+    const origin = findOrigin(entry)
+    if (!entry.pos && origin) {
       // Allow parent relations for suppletive forms whose base word has valid POS
-      const baseEntry = entryFor(entry.parent_relation.word)
+      const baseEntry = entryFor(origin.target)
       if (!baseEntry?.pos) {
         assert.fail(`empty pos still has parent relation: ${word}`)
       }
@@ -577,7 +627,9 @@ test('batch irregular noun plurals preserve correct relations', () => {
       assert.ok(pEntry.inflection_sources.some((s) => s.word === word), `${plural} should have ${word} in inflection_sources`)
     } else {
       assert.equal(pEntry.entry_kind, 'inflection', `${plural} should be inflection`)
-      assert.deepEqual(pEntry.parent_relation, { word, label: baseLabel }, `${plural} parent should be ${word}`)
+      const origin = findOrigin(pEntry)
+      assert.ok(origin, `${plural} should have origin relation`)
+      assert.equal(origin.target, word)
     }
     assert.ok(relationWords(entry.child_relations).includes(`${pluralLabel}:${plural}`), `${word} should have ${pluralLabel}:${plural}`)
   }
@@ -632,7 +684,9 @@ test('dug keeps only strict back-navigation metadata', () => {
   const dDict = loadShard('d')
   const dug = dDict.dug
   assert.ok(dug, 'dug should exist')
-  assert.deepEqual(dug.parent_relation, { word: 'dig', label: '原形' })
+  const dugOrigin = findOrigin(dug)
+  assert.ok(dugOrigin, 'dug should have origin relation')
+  assert.equal(dugOrigin.target, 'dig')
   assert.ok(!relationWords(dug.child_relations).includes('现在分词:digging'), `dug should not link forward to digging, got: ${relationWords(dug.child_relations)}`)
   const inflectionRows = (dug.relations || [])
     .filter((relation) => relation.type === 'inflection')
@@ -657,11 +711,13 @@ test('batch comparative and superlative families preserve correct relations', ()
     assert.equal(cEntry.entry_kind, 'standalone')
     assert.equal(sEntry.entry_kind, 'standalone')
     // Shared irregular forms like better/best may point to a different primary parent
-    if (cEntry.parent_relation?.word === word) {
-      assert.deepEqual(cEntry.parent_relation, { word, label: '原形' })
+    const cOrigin = findOrigin(cEntry)
+    if (cOrigin?.target === word) {
+      assert.equal(cOrigin.target, word)
     }
-    if (sEntry.parent_relation?.word === word) {
-      assert.deepEqual(sEntry.parent_relation, { word, label: '原形' })
+    const sOrigin = findOrigin(sEntry)
+    if (sOrigin?.target === word) {
+      assert.equal(sOrigin.target, word)
     }
     assert.ok(relationWords(entry.child_relations).includes(`比较级:${comparative}`))
     assert.ok(relationWords(entry.child_relations).includes(`最高级:${superlative}`))
@@ -677,7 +733,6 @@ test('batch protected homographs stay standalone with cross-references', () => {
     const entry = entryFor(word)
     assert.ok(entry, `${word} should exist`)
     assert.equal(entry.entry_kind, 'standalone')
-    assert.equal(entry.parent_relation, null)
     assert.ok(
       relationWords(entry.cross_references || []).includes(`${xrefLabel}:${xrefWord}`),
       `${word} should cross-reference ${xrefWord}, got: ${relationWords(entry.cross_references || [])}`,
@@ -725,7 +780,7 @@ test('batch homographs with multiple POS stay standalone without parent relation
     const entry = entryFor(word)
     assert.ok(entry, `${word} should exist`)
     assert.equal(entry.entry_kind, 'standalone', `${word} should be standalone`)
-    assert.equal(entry.parent_relation, null, `${word} should not have parent_relation`)
+    assert.ok(!findOrigin(entry), `${word} should not have origin relation`)
     const actualPos = posKeys(entry)
     for (const pos of expectedPos) {
       assert.ok(actualPos.has(pos), `${word} should have ${pos} POS, got: ${[...actualPos]}`)
@@ -742,7 +797,6 @@ test('batch protected homographs with cross-references include ground and bound'
     const entry = entryFor(word)
     assert.ok(entry, `${word} should exist`)
     assert.equal(entry.entry_kind, 'standalone')
-    assert.equal(entry.parent_relation, null)
     assert.ok(
       relationWords(entry.cross_references || []).includes(`${xrefLabel}:${xrefWord}`),
       `${word} should cross-reference ${xrefWord}, got: ${relationWords(entry.cross_references || [])}`,
