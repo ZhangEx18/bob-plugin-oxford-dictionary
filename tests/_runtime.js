@@ -3,7 +3,7 @@ const path = require('node:path')
 const vm = require('node:vm')
 const esbuild = require('esbuild')
 
-const ENTRY_TS_PATH = path.join(__dirname, '..', 'src', 'entry.ts')
+const ENTRY_TS_PATH = path.join(__dirname, '..', 'src', 'index.ts')
 
 let cachedRuntime = null
 

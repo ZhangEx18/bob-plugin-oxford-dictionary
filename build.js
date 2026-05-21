@@ -38,9 +38,18 @@ const createZip = () => {
   console.log(new Date(), "Zip created");
 };
 
+// Type-check first
+const { execSync } = require("child_process");
+try {
+  execSync("npx tsc --noEmit", { stdio: "inherit", cwd: __dirname });
+} catch (e) {
+  console.error("TypeScript check failed. Fix errors before building.");
+  process.exit(1);
+}
+
 require("esbuild")
   .build({
-    entryPoints: ["./src/entry.ts"],
+    entryPoints: ["./src/index.ts"],
     bundle: true,
     platform: "node",
     treeShaking: false,
