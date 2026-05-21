@@ -172,11 +172,30 @@ function getOriginSources(entry: DictEntry): OriginSource[] {
       posScope: edge.pos_scope || inflectionPosScopeByLabel[edge.label] || [],
     }));
 
+  const xrefSources = (entry.relations || [])
+    .filter((edge) =>
+      edge.type === "xref" &&
+      edge.direction === "outgoing" &&
+      edge.navigable &&
+      inflectionPosScopeByLabel[edge.label]
+    )
+    .map((edge) => ({
+      word: edge.target,
+      label: edge.label,
+      posScope: edge.pos_scope || inflectionPosScopeByLabel[edge.label] || [],
+    }));
+
   const extraSources = getExtraOriginSources(entry);
-  const allSources = [...relationSources, ...extraSources];
+  const allSources = [...relationSources, ...xrefSources, ...extraSources];
 
   if (allSources.length > 0) {
-    return allSources;
+    const seen = new Set<string>();
+    return allSources.filter((source) => {
+      const key = `${source.word}:${source.label}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   return (entry.inflection_sources || []).map((source) => ({
@@ -193,7 +212,17 @@ function shouldExpandOriginSources(entry: DictEntry): boolean {
     const originKeys = new Set(
       sources.map((source) => `${source.label}${source.posScope.join(",")}`),
     );
-    return originKeys.size > 1;
+    if (originKeys.size > 1) return true;
+    // Only expand standalone entries that have xref origins (homograph protected forms like saw/see)
+    const hasXrefOrigin = (entry.relations || []).some(
+      (edge) =>
+        edge.type === "xref" &&
+        edge.direction === "outgoing" &&
+        edge.navigable &&
+        inflectionPosScopeByLabel[edge.label],
+    );
+    if (entry.entry_kind === "standalone" && hasXrefOrigin) return true;
+    return false;
   }
 
   return !entry.parent_relation && (entry.inflection_sources || []).length > 1;
