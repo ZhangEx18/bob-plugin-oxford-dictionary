@@ -1,4 +1,5 @@
-const crypto = require("crypto");
+/** @typedef {{ identifier: string; version: string; category: string; name: string; author: string; minBobVersion: string; }} PluginInfo */
+
 const fs = require("fs");
 const path = require("path");
 const AdmZip = require("adm-zip");
@@ -8,6 +9,7 @@ const MAIN_JS_PATH = path.resolve(__dirname, "./dist/main.js");
 const PLUGIN_NAME = `bob-plugin-oald-dictionary${version}.bobplugin`;
 const ARTIFACT_PATH = path.resolve(__dirname, `./release/${PLUGIN_NAME}`);
 
+/** @type {PluginInfo} */
 const INFO_JSON = {
   identifier: "com.oald.dictionary",
   version: version,
@@ -52,7 +54,7 @@ require("esbuild")
     entryPoints: ["./src/index.ts"],
     bundle: true,
     platform: "node",
-    treeShaking: false,
+    treeShaking: true,
     outfile: MAIN_JS_PATH,
     external: ["@bob-plug/core"],
     watch: isRelease

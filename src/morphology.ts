@@ -1,12 +1,8 @@
 import * as Bob from "@bob-plug/core";
 import { DictEntry, EntryView, MorphologyItem } from "./types";
-import { getCrossReferences, getOriginSources, shouldExpandOriginSources } from "./relations";
+import { EXTRA_PLURALS, getCrossReferences, getOriginSources, shouldExpandOriginSources } from "./relations";
 
 export const morphologyLabelOrder = ["原形", "复数", "第三人称单数", "现在分词", "过去式", "过去分词", "比较级", "最高级"];
-
-const EXTRA_PLURALS: Record<string, string[]> = {
-  score: ["scores"],
-};
 
 const preferredPairs: Array<[string, string]> = [
   ["travelled", "traveled"],
@@ -130,22 +126,18 @@ export function addExchangeMorphologyFromRawEntry(
     }
   }
 
+  const exchangeKeyToLabel: Record<string, string> = {
+    "3": "第三人称单数",
+    p: "过去式",
+    d: "过去分词",
+    i: "现在分词",
+    s: "复数",
+    c: "比较级",
+    sup: "最高级",
+  };
+
   for (const [key, words] of exchangeValues.entries()) {
-    const label = key === "3"
-      ? "第三人称单数"
-      : key === "p"
-        ? "过去式"
-        : key === "d"
-          ? "过去分词"
-          : key === "i"
-            ? "现在分词"
-            : key === "s"
-              ? "复数"
-              : key === "c"
-                ? "比较级"
-                : key === "sup"
-                  ? "最高级"
-                  : "";
+    const label = exchangeKeyToLabel[key];
     if (!label) continue;
     for (const word of words) {
       if (shouldSkip && shouldSkip(label, word)) continue;
@@ -191,7 +183,8 @@ export function buildMorphologyExchanges(view: EntryView): Bob.ExchangeObject[] 
     addMorphologyItem(view.backRelation.label, view.backRelation.word);
   }
 
-  const hasOriginRelations = getOriginSources(view.entry).length > 0;
+  const originSources = getOriginSources(view.entry);
+  const hasOriginRelations = originSources.length > 0;
   for (const relation of view.childRelations) {
     if (hasOriginRelations && relation.word.toLowerCase() === view.queryWord) {
       continue;
@@ -206,7 +199,6 @@ export function buildMorphologyExchanges(view: EntryView): Bob.ExchangeObject[] 
     return false;
   });
 
-  const originSources = getOriginSources(view.entry);
   if (shouldExpandOriginSources(view.entry)) {
     for (const source of originSources) {
       addMorphologyItem("原形", source.word);

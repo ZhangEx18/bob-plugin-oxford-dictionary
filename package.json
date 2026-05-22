@@ -9,10 +9,9 @@
     "lint": "npx tsc --noEmit",
     "build": "node build.js"
   },
-  "dependencies": {
-    "@bob-plug/core": "^0.1.4"
-  },
+  "dependencies": {},
   "devDependencies": {
+    "@bob-plug/core": "^0.1.4",
     "@types/node": "^25.9.1",
     "adm-zip": "^0.5.9",
     "esbuild": "^0.14.48",

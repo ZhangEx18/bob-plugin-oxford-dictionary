@@ -47,11 +47,6 @@ export interface WordRelation {
   label: string;
 }
 
-export interface InflectionSource {
-  word: string;
-  label: string;
-}
-
 export interface RelationEdge {
   type: "inflection" | "origin" | "xref" | "lexical_origin" | "defective" | "variant" | "self_loop";
   target: string;
