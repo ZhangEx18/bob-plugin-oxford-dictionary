@@ -1,7 +1,6 @@
 import * as Bob from "@bob-plug/core";
 import { DictEntry, TranslationDetail, TranslationDetailPart } from "./types";
-import { getShardForWord } from "./data-loader";
-import { getOriginSources, shouldExpandOriginSources } from "./relations";
+import { getOriginSources } from "./relations";
 
 export function parseParts(translation: string): Bob.PartObject[] {
   const parts: Bob.PartObject[] = [];
@@ -104,7 +103,10 @@ export function formatSourceLabel(sourceWord: string, sourceLabel: string): stri
   return `${sourceWord} 的 ${sourceLabel}`;
 }
 
-export function buildGroupedSourceParts(entry: DictEntry): Bob.PartObject[] {
+export function buildGroupedSourceParts(
+  entry: DictEntry,
+  sourceEntries: Map<string, DictEntry>,
+): Bob.PartObject[] {
   const result: Bob.PartObject[] = [];
   const sources = getOriginSources(entry);
   const sourceLabels = new Set(sources.map((source) => formatSourceLabel(source.word, source.label)));
@@ -135,10 +137,7 @@ export function buildGroupedSourceParts(entry: DictEntry): Bob.PartObject[] {
   });
 
   for (const source of sortedSources) {
-    const sourceShard = getShardForWord(source.word);
-    if (!sourceShard) continue;
-
-    const sourceEntry = sourceShard[source.word.toLowerCase()];
+    const sourceEntry = sourceEntries.get(source.word.toLowerCase());
     if (!sourceEntry) continue;
 
     const sourceParts = getTranslationDetailParts(sourceEntry);

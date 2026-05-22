@@ -1,5 +1,4 @@
 import { DictEntry, WordRelation, OriginSource, RelationEdge } from "./types";
-import { getShardForWord } from "./data-loader";
 
 export const inflectionPosScopeByLabel: Record<string, string[]> = {
   "第三人称单数": ["v"],
@@ -11,7 +10,7 @@ export const inflectionPosScopeByLabel: Record<string, string[]> = {
   "最高级": ["adj", "adv"],
 };
 
-const EXTRA_PLURALS: Record<string, string[]> = {
+export const EXTRA_PLURALS: Record<string, string[]> = {
   score: ["scores"],
 };
 
