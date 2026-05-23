@@ -109,6 +109,15 @@ test("parseParts extracts pos and meanings from translation string", async () =>
   assert.equal(result[1].means[0], "尝试");
 });
 
+test("parseParts supports extended and compound OALD pos labels", async () => {
+  const formatter = await loadModule("formatter.ts");
+  const result = formatter.parseParts("det. 每个\nadj. / adv. 赤脚地");
+
+  assert.equal(result.length, 2);
+  assert.equal(result[0].part, "det.");
+  assert.equal(result[1].part, "adj. / adv.");
+});
+
 test("parseParts skips malformed lines", async () => {
   const formatter = await loadModule("formatter.ts");
   const result = formatter.parseParts("v. 跑\nnot a valid line\nn. 测试");

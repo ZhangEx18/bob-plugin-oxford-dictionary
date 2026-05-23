@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { loadRuntime } = require('./_runtime')
 
 /**
  * Load all dictionary shards into a flat entries object and collect metadata.
@@ -35,7 +36,16 @@ function collectRelationTargets(entry) {
 
   if (Array.isArray(entry.relations)) {
     for (const rel of entry.relations) {
-      if (rel?.target) targets.push(rel.target)
+      if (rel?.target) {
+        targets.push({
+          target: rel.target,
+          type: rel.type,
+          label: rel.label,
+          display: rel.display,
+          source: rel.source,
+          navigable: rel.navigable,
+        })
+      }
     }
   }
 
@@ -51,6 +61,15 @@ const VALID_ENTRY_KINDS = new Set(['standalone', 'inflection', 'alias'])
 const { entries, shards, totalEntries } = loadAllShards()
 const globalKeySet = buildGlobalKeySet(entries)
 const entryList = Object.entries(entries)
+let runtimeRelations = null
+
+async function getRuntimeRelationsModule() {
+  if (!runtimeRelations) {
+    const runtime = await loadRuntime()
+    runtimeRelations = runtime.__relationsForTests || null
+  }
+  return runtimeRelations
+}
 
 // ---------------------------------------------------------------------------
 // Shard-level invariants
@@ -181,33 +200,46 @@ test('standalone entries have translation or linked_word', () => {
 // Relation integrity invariants
 // ---------------------------------------------------------------------------
 
-test('all relation targets exist in global dictionary', () => {
+test('all resolvable runtime relation targets exist in global dictionary', async () => {
+  const relationsModule = await getRuntimeRelationsModule()
+  if (!relationsModule) {
+    assert.fail('runtime relations module is unavailable for invariants test')
+  }
+
   const failures = []
   for (const [key, entry] of entryList) {
-    const targets = collectRelationTargets(entry)
-    for (const target of targets) {
-      if (!targetExists(target, globalKeySet)) {
-        failures.push({ key, target })
+    const runtimeTargets = [
+      ...(relationsModule.getChildRelations(entry) || []).map((rel) => ({ target: rel.word, bucket: 'child' })),
+      ...(relationsModule.getCrossReferences(entry) || []).map((rel) => ({ target: rel.word, bucket: 'xref' })),
+      ...(relationsModule.getOriginSources(entry) || []).map((rel) => ({ target: rel.word, bucket: 'origin' })),
+    ]
+
+    for (const rel of runtimeTargets) {
+      if (!targetExists(rel.target, globalKeySet)) {
+        failures.push({ key, ...rel })
         if (failures.length >= 10) break
       }
     }
     if (failures.length >= 10) break
   }
   assert.equal(failures.length, 0,
-    `${failures.length} dangling relation targets: ${JSON.stringify(failures.slice(0, 3))}`)
+    `${failures.length} dangling runtime relation targets: ${JSON.stringify(failures.slice(0, 3))}`)
 })
 
-test('alias entries do not have relations array', () => {
+test('alias entries only carry display-only word-family relations', () => {
   const failures = []
   for (const [key, entry] of entryList) {
     if (entry.entry_kind !== 'alias') continue
-    if (Array.isArray(entry.relations) && entry.relations.length > 0) {
+    const unexpectedRelations = (entry.relations || []).filter((relation) =>
+      relation.source !== 'word_family' || relation.type !== 'lexical_origin' || relation.display !== 'reference'
+    )
+    if (unexpectedRelations.length > 0) {
       failures.push(key)
       if (failures.length >= 10) break
     }
   }
   assert.equal(failures.length, 0,
-    `${failures.length} alias entries with unexpected relations: ${failures.slice(0, 5).join(', ')}`)
+    `${failures.length} alias entries with unexpected non-word-family relations: ${failures.slice(0, 5).join(', ')}`)
 })
 
 // ---------------------------------------------------------------------------

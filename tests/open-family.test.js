@@ -3,12 +3,94 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 
+function toLegacyRelation(edge) {
+  return {
+    word: edge.target,
+    target: edge.target,
+    label: edge.label,
+  }
+}
+
+function hasEntry(allEntries, word) {
+  return !!allEntries[word?.toLowerCase?.()]
+}
+
+function decorateEntry(entry, allEntries) {
+  if (!entry || entry.__legacyDecorated) {
+    return entry
+  }
+
+  const relations = Array.isArray(entry.relations) ? entry.relations : []
+  const childRelations = relations
+    .filter((edge) => (
+      edge.type === 'inflection'
+      && edge.direction === 'outgoing'
+      && edge.display === 'exchange'
+      && edge.navigable
+      && hasEntry(allEntries, edge.target)
+    ))
+    .map(toLegacyRelation)
+
+  const crossReferences = relations
+    .filter((edge) => edge.type === 'xref' && edge.direction === 'outgoing' && edge.navigable && hasEntry(allEntries, edge.target))
+    .map(toLegacyRelation)
+
+  const originRelations = relations
+    .filter((edge) => edge.type === 'origin' && edge.direction === 'outgoing' && edge.navigable && hasEntry(allEntries, edge.target))
+    .map((edge) => ({
+      word: edge.target,
+      target: edge.target,
+      label: edge.label,
+      posScope: edge.pos_scope || [],
+      primary: !!edge.primary,
+    }))
+
+  const xrefInflectionSources = relations
+    .filter((edge) => (
+      edge.type === 'xref'
+      && edge.direction === 'outgoing'
+      && edge.navigable
+      && hasEntry(allEntries, edge.target)
+      && ['第三人称单数', '过去式', '过去分词', '现在分词', '复数', '比较级', '最高级'].includes(edge.label)
+    ))
+    .map((edge) => ({
+      word: edge.target,
+      target: edge.target,
+      label: edge.label,
+      posScope: edge.pos_scope || [],
+      primary: !!edge.primary,
+    }))
+
+  const inflectionSources = [...originRelations, ...xrefInflectionSources]
+    .filter((item, index, items) => items.findIndex((other) => `${other.word}:${other.label}` === `${item.word}:${item.label}`) === index)
+
+  const primaryOrigin = originRelations.find((item) => item.primary) || originRelations[0] || null
+
+  Object.assign(entry, {
+    child_relations: childRelations,
+    cross_references: crossReferences,
+    parent_relation: primaryOrigin ? { word: primaryOrigin.word, label: '原形' } : null,
+    inflection_sources: entry.entry_kind === 'standalone' && inflectionSources.length > 1 ? inflectionSources : undefined,
+    __legacyDecorated: true,
+  })
+
+  return entry
+}
+
 function loadShard(char) {
   const dictPath = path.join(__dirname, '..', 'dict', `${char}.json`)
-  return JSON.parse(fs.readFileSync(dictPath, 'utf8'))
+  const shard = JSON.parse(fs.readFileSync(dictPath, 'utf8'))
+  const allEntries = loadAllEntries()
+  for (const entry of Object.values(shard)) {
+    decorateEntry(entry, allEntries)
+  }
+  return shard
 }
 
 function loadAllEntries() {
+  if (loadAllEntries.cache) {
+    return loadAllEntries.cache
+  }
   const dictDir = path.join(__dirname, '..', 'dict')
   const entries = {}
 
@@ -17,6 +99,11 @@ function loadAllEntries() {
     Object.assign(entries, JSON.parse(fs.readFileSync(path.join(dictDir, file), 'utf8')))
   }
 
+  for (const entry of Object.values(entries)) {
+    decorateEntry(entry, entries)
+  }
+
+  loadAllEntries.cache = entries
   return entries
 }
 
@@ -38,7 +125,7 @@ const distinctSurfaceNvSamples = [
   { word: 'court-martial', thirdForms: [{ form: 'court-martials', displayWord: 'court-martial', parentWord: 'court-martial' }], pluralForms: [{ form: 'courts martial', displayWord: 'court-martial', parentWord: 'court-martial' }] },
   { word: 'crow', thirdForms: [{ form: 'crows', displayWord: 'crow', parentWord: 'crow' }], pluralForms: [{ form: 'Crows', displayWord: 'crow', parentWord: 'crow' }] },
   { word: 'die', thirdForms: [{ form: 'dies', displayWord: 'die', parentWord: 'die' }], pluralForms: [{ form: 'dice', displayWord: 'dice', parentWord: 'die' }] },
-  { word: 'do', thirdForms: [{ form: 'does', displayWord: 'does', parentWord: null }], pluralForms: [{ form: 'dos', displayWord: 'do', parentWord: 'do' }, { form: 'do’s', displayWord: 'do', parentWord: 'do' }] },
+  { word: 'do', thirdForms: [{ form: 'does', displayWord: 'does', parentWord: null }], pluralForms: [{ form: 'dos', displayWord: 'dos', parentWord: null }, { form: 'do’s', displayWord: 'do', parentWord: 'do' }] },
   { word: 'focus', thirdForms: [{ form: 'focusses', displayWord: 'focus', parentWord: 'focus' }], pluralForms: [{ form: 'foci', displayWord: 'focus', parentWord: 'focus' }] },
   { word: 'goose', thirdForms: [{ form: 'gooses', displayWord: 'goose', parentWord: 'goose' }], pluralForms: [{ form: 'geese', displayWord: 'geese', parentWord: 'goose' }] },
   { word: 'hang', thirdForms: [{ form: 'hangs', displayWord: 'hang', parentWord: 'hang' }], pluralForms: [{ form: 'hanged', displayWord: 'hang', parentWord: 'hang' }] },
@@ -47,7 +134,7 @@ const distinctSurfaceNvSamples = [
   { word: 'last', thirdForms: [{ form: 'lasts', displayWord: 'last', parentWord: 'last' }], pluralForms: [{ form: 'the last', displayWord: 'last', parentWord: 'last' }] },
   { word: 'loaf', thirdForms: [{ form: 'loafs', displayWord: 'loaf', parentWord: 'loaf' }], pluralForms: [{ form: 'loaves', displayWord: 'loaves', parentWord: null }] },
   { word: 'man', thirdForms: [{ form: 'mans', displayWord: 'man', parentWord: 'man' }], pluralForms: [{ form: 'men', displayWord: 'men', parentWord: 'man' }] },
-  { word: 'staff', thirdForms: [{ form: 'staffs', displayWord: 'staff', parentWord: 'staff' }], pluralForms: [{ form: 'staves', displayWord: 'staff', parentWord: 'staff' }] },
+  { word: 'staff', thirdForms: [], pluralForms: [{ form: 'staves', displayWord: 'staff', parentWord: 'staff' }] },
   { word: 'tango', thirdForms: [{ form: 'tangoes', displayWord: 'tango', parentWord: 'tango' }], pluralForms: [{ form: 'tangos', displayWord: 'tango', parentWord: 'tango' }] },
   { word: 'wolf', thirdForms: [{ form: 'wolfs', displayWord: 'wolf', parentWord: 'wolf' }], pluralForms: [{ form: 'wolves', displayWord: 'wolves', parentWord: null }] },
 ]

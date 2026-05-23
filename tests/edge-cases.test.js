@@ -6,13 +6,6 @@ const { runTranslate, loadRuntime } = require('./_runtime')
 // Language and input validation
 // ---------------------------------------------------------------------------
 
-test('rejects non-English source language', async () => {
-  await assert.rejects(
-    () => runTranslate('hello', { detectFrom: 'zh' }),
-    (err) => err.errorType === 'unsupportLanguage'
-  )
-})
-
 test('rejects empty string query', async () => {
   await assert.rejects(
     () => runTranslate(''),
@@ -20,16 +13,19 @@ test('rejects empty string query', async () => {
   )
 })
 
-test('rejects multi-word query without hyphen', async () => {
-  await assert.rejects(
-    () => runTranslate('hello world'),
-    (err) => err.errorType === 'notFound'
-  )
-})
-
 test('rejects non-existent word', async () => {
   await assert.rejects(
-    () => runTranslate('xyznonexistent123'),
+    () => runTranslate('xyznonexistent123', {
+      overrides: {
+        $httpMocks: [
+          {
+            method: 'POST',
+            url: 'https://aidemo.youdao.com/trans',
+            response: { errorCode: '1', translation: [] },
+          },
+        ],
+      },
+    }),
     (err) => err.errorType === 'notFound'
   )
 })
@@ -58,6 +54,42 @@ test('handles hyphenated compound words', async () => {
   const result = await runTranslate('well-known')
   assert.equal(result.toDict.word, 'well-known')
   assert.ok(result.toDict.parts.length > 0)
+})
+
+test('routes non-English single token to Youdao translation', async () => {
+  const result = await runTranslate('你好', {
+    detectFrom: 'zh-Hans',
+    detectTo: 'en',
+    overrides: {
+      $httpMocks: [
+        {
+          method: 'POST',
+          url: 'https://aidemo.youdao.com/trans',
+          response: { errorCode: '0', translation: ['hello'] },
+        },
+      ],
+    },
+  })
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), ['hello'])
+  assert.equal(result.raw.provider, 'youdao-translate')
+})
+
+test('routes multi-word query to Youdao translation instead of rejecting', async () => {
+  const result = await runTranslate('hello world', {
+    overrides: {
+      $httpMocks: [
+        {
+          method: 'POST',
+          url: 'https://aidemo.youdao.com/trans',
+          response: { errorCode: '0', translation: ['你好，世界'] },
+        },
+      ],
+    },
+  })
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), ['你好，世界'])
+  assert.equal(result.raw.provider, 'youdao-translate')
 })
 
 // ---------------------------------------------------------------------------
@@ -166,6 +198,8 @@ test('multi-origin entry aggregates without duplicate parts', async () => {
 test('supportLanguages returns expected languages', async () => {
   const runtime = await loadRuntime()
   const languages = runtime.supportLanguages()
+  assert.ok(languages.includes('auto'))
   assert.ok(languages.includes('en'))
   assert.ok(languages.includes('zh-Hans'))
+  assert.ok(languages.includes('ja'))
 })

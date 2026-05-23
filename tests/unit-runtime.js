@@ -1,4 +1,5 @@
 const path = require("node:path");
+const fs = require("node:fs");
 const vm = require("node:vm");
 const esbuild = require("esbuild");
 
@@ -24,7 +25,19 @@ async function loadModule(modulePath) {
 
   const source = buildResult.outputFiles[0].text;
   const context = {
-    $file: { read: () => null },
+    $file: {
+      read(relativePath) {
+        const fullPath = path.join(__dirname, "..", relativePath);
+        if (!fs.existsSync(fullPath)) {
+          return null;
+        }
+        return {
+          toUTF8() {
+            return fs.readFileSync(fullPath, "utf8");
+          },
+        };
+      },
+    },
     module: { exports: {} },
     exports: {},
     require,
