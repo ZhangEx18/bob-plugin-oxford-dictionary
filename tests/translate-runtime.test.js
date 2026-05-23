@@ -3,11 +3,272 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { runTranslate } = require('./_runtime')
+const DISPLAY_SEPARATOR = '\u00A0'
 
 function loadShard(char) {
   const dictPath = path.join(__dirname, '..', 'dict', `${char}.json`)
   return JSON.parse(fs.readFileSync(dictPath, 'utf8'))
 }
+
+function visibleParts(parts) {
+  return parts.filter((part) => part.part.trim() || part.means.some((mean) => mean.trim()))
+}
+
+function youdaoDictionaryMockResponse(word, overrides = {}) {
+  return {
+    ec: {
+      word: {
+        ukphone: "ˌəʊvəˈbɔː(r)",
+        usphone: "ˌoʊvərˈbɔːr",
+        trs: [
+          {
+            pos: "v.",
+            tran: "overbear 的过去式",
+          },
+        ],
+        wfs: [
+          { wf: { name: "原形", value: "overbear" } },
+          { wf: { name: "过去分词", value: "overborne" } },
+        ],
+        prototype: "overbear",
+      },
+      exam_type: ["TEM8"],
+      web_trans: ["被压倒的"],
+    },
+    blng_sents_part: {
+      sentence_pair: [
+        { sentence: "He overbore their resistance.", sentence_translation: "他压倒了他们的抵抗。" },
+      ],
+    },
+    ...overrides,
+  }
+}
+
+test('decide renders phrasal verbs, verb forms, then word-family display once', async () => {
+  const result = await runTranslate('decide')
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.parts.slice(1))), [
+    { part: DISPLAY_SEPARATOR, means: [DISPLAY_SEPARATOR] },
+    { part: 'decide on', means: ['v. 决定；选定'] },
+    { part: 'decide upon', means: ['v. 决定；选定'] },
+  ])
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.addtions)), [])
+
+  const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
+  assert.deepEqual(JSON.parse(JSON.stringify(exchangeRows.slice(-4))), [
+    '过去式:decided',
+    '过去分词:decided',
+    '现在分词:deciding',
+    '第三人称单数:decides',
+  ])
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.relatedWordParts)), [
+    {
+      words: [
+        { word: 'decision', means: ['n.'] },
+        { word: 'decisive', means: ['adj.'] },
+        { word: 'undecided', means: ['adj.'] },
+      ],
+    },
+  ])
+})
+
+test('every is retained as an OALD determiner entry', async () => {
+  const result = await runTranslate('every')
+
+  assert.equal(result.toDict.word, 'every')
+  assert.ok(result.toDict.parts.length > 0, 'every should render definition parts')
+  assert.equal(result.toDict.parts[0].part, 'det.')
+  assert.ok(
+    result.toDict.parts[0].means.some((meaning) => meaning.includes('每一个') || meaning.includes('每个')),
+    `every should include its Chinese definition, got: ${JSON.stringify(result.toDict.parts)}`,
+  )
+})
+
+test('decision renders OALD word-family peers without generated guesses', async () => {
+  const result = await runTranslate('decision')
+  const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
+
+  assert.ok(!exchangeRows.some((row) => row.includes('concision')), `decision should not include generated word-family guesses: ${exchangeRows}`)
+  assert.ok(!exchangeRows.some((row) => row.includes('incision')), `decision should not include generated word-family guesses: ${exchangeRows}`)
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.relatedWordParts)), [
+    {
+      words: [
+        { word: 'decide', means: ['v.'] },
+        { word: 'decisive', means: ['adj.'] },
+        { word: 'undecided', means: ['adj.'] },
+      ],
+    },
+  ])
+})
+
+test('OALD miss falls back to Youdao dictionary for missing words like overbore', async () => {
+  const result = await runTranslate('overbore', {
+    $httpMocks: [
+      {
+        method: 'POST',
+        url: 'https://dict.youdao.com/jsonapi_s?doctype=json&jsonversion=4',
+        response: youdaoDictionaryMockResponse('overbore'),
+        rawData: youdaoDictionaryMockResponse('overbore'),
+      },
+    ],
+  })
+
+  assert.equal(result.toDict.word, 'overbore')
+  assert.equal(result.raw.provider, 'youdao-dict')
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.parts)), [
+    { part: 'v.', means: ['overbear 的过去式'] },
+  ])
+  assert.ok(result.toDict.exchanges.some((item) => item.name === '原形' && item.words.includes('overbear')))
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), [])
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.additions || [])), [])
+})
+
+test('Youdao dictionary also works when Bob passes resp.data as an object', async () => {
+  const payload = youdaoDictionaryMockResponse('overbore')
+  const result = await runTranslate('overbore', {
+    $httpMocks: [
+      {
+        method: 'POST',
+        url: 'https://dict.youdao.com/jsonapi_s?doctype=json&jsonversion=4',
+        response: payload,
+        rawData: payload,
+      },
+    ],
+  })
+
+  assert.equal(result.raw.provider, 'youdao-dict')
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.parts)), [
+    { part: 'v.', means: ['overbear 的过去式'] },
+  ])
+})
+
+test('Youdao dictionary miss degrades to translation result for single word query', async () => {
+  const result = await runTranslate('overbore', {
+    $httpMocks: [
+      {
+        method: 'POST',
+        url: 'https://dict.youdao.com/jsonapi_s?doctype=json&jsonversion=4',
+        response: {},
+      },
+      {
+        method: 'POST',
+        url: 'https://aidemo.youdao.com/trans',
+        response: { errorCode: '0', translation: ['压倒了'] },
+      },
+    ],
+  })
+
+  assert.equal(result.raw.provider, 'youdao-translate')
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), ['压倒了'])
+})
+
+test('sentence translation uses Youdao translation route', async () => {
+  const result = await runTranslate('This is a sentence.', {
+    overrides: {
+      $httpMocks: [
+        {
+          method: 'POST',
+          url: 'https://aidemo.youdao.com/trans',
+          response: { errorCode: '0', translation: ['这是一个句子。'] },
+        },
+      ],
+    },
+  })
+
+  assert.equal(result.raw.provider, 'youdao-translate')
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), ['这是一个句子。'])
+})
+
+test('sentence translation normalizes OCR line breaks before calling Youdao', async () => {
+  const result = await runTranslate('This is a long-\n sentence from OCR.\nIt should read naturally.', {
+    overrides: {
+      $httpMocks: [
+        {
+          method: 'POST',
+          url: 'https://aidemo.youdao.com/trans',
+          match: (options) => options.body?.q === 'This is a long- sentence from OCR. It should read naturally.'
+            || options.body?.q === 'This is a long sentence from OCR. It should read naturally.'
+            || options.body?.q === 'This is a longsentence from OCR. It should read naturally.',
+          response: { errorCode: '0', translation: ['这是一句经过整理的长难句。'] },
+        },
+      ],
+    },
+  })
+
+  assert.equal(result.raw.provider, 'youdao-translate')
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), ['这是一句经过整理的长难句。'])
+})
+
+test('translation supports a third language pair through Youdao', async () => {
+  const result = await runTranslate('bonjour', {
+    detectFrom: 'fr',
+    detectTo: 'en',
+    overrides: {
+      $httpMocks: [
+        {
+          method: 'POST',
+          url: 'https://aidemo.youdao.com/trans',
+          response: { errorCode: '0', translation: ['hello'] },
+        },
+      ],
+    },
+  })
+
+  assert.equal(result.raw.provider, 'youdao-translate')
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), ['hello'])
+})
+
+test('runtime uses structured verb_forms when exchange relations are absent', async () => {
+  const shard = loadShard('d')
+  const decide = shard.decide
+  const modifiedShard = {
+    ...shard,
+    decide: {
+      ...decide,
+      exchange: '',
+      relations: (decide.relations || []).filter((relation) => relation.type !== 'inflection'),
+    },
+  }
+
+  const result = await runTranslate('decide', {
+    'dict/d.json': JSON.stringify(modifiedShard),
+  })
+  const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
+
+  assert.deepEqual(JSON.parse(JSON.stringify(exchangeRows.slice(-4))), [
+    '过去式:decided',
+    '过去分词:decided',
+    '现在分词:deciding',
+    '第三人称单数:decides',
+  ])
+})
+
+test('fallback display keeps compound OALD POS blocks when origin scope matches', async () => {
+  const shard = loadShard('h')
+  const happy = shard.happy
+  const modifiedShard = {
+    ...shard,
+    happy: {
+      ...happy,
+      translation: 'adj. / adv. shared meaning',
+      translation_parts: [
+        { pos: 'adj. / adv.', meanings: ['shared meaning'] },
+      ],
+      translation_detail_parts: [
+        { pos: 'adj. / adv.', details: [{ text: 'shared meaning' }] },
+      ],
+    },
+  }
+
+  const result = await runTranslate('happier', {
+    'dict/h.json': JSON.stringify(modifiedShard),
+  })
+
+  assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [
+    { part: 'adj. / adv.', means: ['shared meaning'] },
+  ])
+})
 
 test('travel only displays primary American variants in runtime exchanges', async () => {
   const result = await runTranslate('travel')
@@ -43,8 +304,8 @@ test('comparative variants stay queryable while base entries expose comparative 
 
   assert.equal(happier.raw.displayWord, 'happy')
   assert.equal(happiest.raw.displayWord, 'happy')
-  assert.deepEqual(JSON.parse(JSON.stringify(happier.toDict.exchanges)), [{ name: '原形', words: ['happy'] }])
-  assert.deepEqual(JSON.parse(JSON.stringify(happiest.toDict.exchanges)), [{ name: '原形', words: ['happy'] }])
+  assert.deepEqual(JSON.parse(JSON.stringify(happier.toDict.exchanges[0])), { name: '原形', words: ['happy'] })
+  assert.deepEqual(JSON.parse(JSON.stringify(happiest.toDict.exchanges[0])), { name: '原形', words: ['happy'] })
 
   const exchangeMap = new Map(happy.toDict.exchanges.map((item) => [item.name, item.words]))
   assert.deepEqual([...exchangeMap.get('比较级')], ['happier'])
@@ -173,7 +434,7 @@ test('runtime prefers translation_parts when present', async () => {
     'dict/o.json': JSON.stringify(modifiedShard),
   })
 
-  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.parts)), [
+  assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [
     { part: 'v.', means: ['first meaning', 'second meaning'] },
     { part: 'n.', means: ['nominal meaning'] },
   ])
@@ -192,7 +453,7 @@ test('runtime falls back to translation string when translation_parts is absent'
     'dict/o.json': JSON.stringify(modifiedShard),
   })
 
-  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.parts)), [
+  assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [
     { part: 'v.', means: ['(尤指经努力)获得,赢得；(规则、制度、习俗等)流行'] },
   ])
 })
@@ -212,7 +473,7 @@ test('runtime falls back to translation string when translation_parts is unusabl
     'dict/o.json': JSON.stringify(modifiedShard),
   })
 
-  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.parts)), [
+  assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [
     { part: 'v.', means: ['(尤指经努力)获得,赢得；(规则、制度、习俗等)流行'] },
   ])
 })

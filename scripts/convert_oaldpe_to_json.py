@@ -18,16 +18,40 @@ MDX_PATH = str(OALD_ROOT / "oaldpe.mdx")
 OUTPUT_DIR = str(PROJECT_ROOT / "dict")
 REPORT_INTERVAL = 10000
 
-VALID_POS = {"n", "v", "adj", "adv", "int", "prep", "conj", "pron", "art", "num"}
+VALID_POS = {
+    "n", "v", "adj", "adv", "int", "prep", "conj", "pron", "art", "num",
+    "det", "modal", "abbr", "ordinal", "aux", "linking", "phrv", "idm",
+    "prefix", "suffix", "combining", "short", "symbol", "infmarker",
+}
 
+# Mapping from OALD's full POS labels to compact POS keys.
+# Example: "noun" -> "n", "phrasal verb" -> "phrv".
+# Used by normalize_pos() to canonicalize part-of-speech strings.
 POS_MAP = {
     "noun": "n", "verb": "v", "adjective": "adj", "adverb": "adv",
     "exclamation": "int", "preposition": "prep", "conjunction": "conj",
     "pronoun": "pron", "number": "num", "determiner": "det", "modal verb": "modal",
-    "abbreviation": "abbr",
+    "abbreviation": "abbr", "ordinal number": "ordinal", "auxiliary verb": "aux",
+    "linking verb": "linking", "phrasal verb": "phrv", "idiom": "idm",
+    "prefix": "prefix", "suffix": "suffix", "combining form": "combining",
+    "short form": "short", "symbol": "symbol", "indefinite article": "art",
+    "definite article": "art", "infinitive marker": "infmarker",
 }
 
-EXCHANGE_LABELS = {"thirdps": "3", "past": "p", "pastpart": "d", "prespart": "i"}
+POS_DISPLAY = {
+    "n": "n.", "v": "v.", "adj": "adj.", "adv": "adv.", "int": "int.",
+    "prep": "prep.", "conj": "conj.", "pron": "pron.", "art": "art.",
+    "num": "num.", "det": "det.", "modal": "modal.", "abbr": "abbr.",
+    "ordinal": "ordinal.", "aux": "aux.", "linking": "linking.",
+    "phrv": "phrv.", "idm": "idm.", "prefix": "prefix.", "suffix": "suffix.",
+    "combining": "combining.", "short": "short.", "symbol": "symbol.",
+    "infmarker": "infmarker.",
+}
+
+# Mapping from MDX verb form attribute names to compact exchange keys.
+# These keys are used in the exchange string format (e.g., "3:walks/p:walked").
+# "thirdps" -> "3" (3rd person singular), "past" -> "p", "pastpart"/"ptpp" -> "d" (past participle), "prespart" -> "i" (present participle).
+EXCHANGE_LABELS = {"thirdps": "3", "past": "p", "pastpart": "d", "ptpp": "d", "prespart": "i"}
 
 PUNCTUATION_MAP = str.maketrans({
     "［": "[",
@@ -42,6 +66,10 @@ PUNCTUATION_MAP = str.maketrans({
     ";": "；",
 })
 
+# Chinese display labels for exchange keys.
+# Maps compact exchange keys to human-readable Chinese labels used in
+# the UI and relation metadata. Used by build_exchange_lines() and
+# classify_inflection_parent().
 EXCHANGE_DISPLAY_LABELS = {
     "3": "第三人称单数",
     "p": "过去式",
@@ -51,8 +79,30 @@ EXCHANGE_DISPLAY_LABELS = {
     "c": "比较级",
     "sup": "最高级",
 }
+VERB_FORM_LABELS = {
+    "root": "原形",
+    "thirdps": "第三人称单数",
+    "past": "过去式",
+    "pastpart": "过去分词",
+    "ptpp": "过去分词",
+    "prespart": "现在分词",
+}
 
+# Display order for exchange keys when serializing or rendering exchange strings.
+# This order ensures verb forms (3rd person, past, past participle, present participle)
+# appear before noun/adjective forms (plural, comparative, superlative).
+# Used by serialize_exchange_values() and build_exchange_lines().
 EXCHANGE_DISPLAY_ORDER = ["3", "p", "d", "i", "s", "c", "sup"]
+WORD_FAMILY_POS = {
+    "noun": "noun",
+    "verb": "verb",
+    "adjective": "adjective",
+    "adverb": "adverb",
+    "n": "noun",
+    "v": "verb",
+    "adj": "adjective",
+    "adv": "adverb",
+}
 
 FORM_KEY_FAMILIES: dict[str, set[str]] = {
     "3": {"3", "p", "d", "i"},
@@ -66,6 +116,9 @@ FORM_KEY_FAMILIES: dict[str, set[str]] = {
 IRREGULAR_COMPARATIVE_FORMS = {"more", "less", "better", "worse", "farther", "further"}
 IRREGULAR_SUPERLATIVE_FORMS = {"most", "least", "best", "worst", "farthest", "furthest"}
 
+# Mapping of irregular nouns to their plural forms.
+# Used by infer_plural_form() to avoid generating regular plural forms
+# for words that have irregular plurals (e.g., "child" -> "children").
 IRREGULAR_PLURALS: dict[str, str] = {
     "child": "children",
     "man": "men",
@@ -87,7 +140,13 @@ IRREGULAR_PLURALS: dict[str, str] = {
     "criterion": "criteria",
     "datum": "data",
 }
+
+# Delimiter used to join multiple meaning fragments within a single meaning item.
+# Example: "fragment1, fragment2" becomes a single meaning text.
 FRAGMENT_JOINER = ","
+
+# Delimiter used to join multiple meaning items when building the final translation string.
+# Example: "n. meaning1；meaning2" separates different meanings for display.
 MEANING_JOINER = "；"
 QUALIFIER_LEFT = "("
 QUALIFIER_RIGHT = ")"
@@ -137,19 +196,46 @@ def normalize_display_text(text: str) -> str:
 
 
 def normalize_pos(pos_raw: str) -> str | None:
-    pos_lower = pos_raw.lower()
-    # Exact match first
+    pos_lower = normalize_display_text(pos_raw).lower()
+    if not pos_lower:
+        return None
+
+    parts = [
+        part.strip()
+        for part in re.split(r"\s*,\s*|\s*/\s*|\s+and\s+", pos_lower)
+        if part.strip()
+    ]
+    if len(parts) > 1:
+        mapped_parts = [normalize_pos(part) for part in parts]
+        valid_parts = [part for part in mapped_parts if part]
+        return "+".join(valid_parts) if valid_parts else None
+
+    # Exact match first. This keeps OALD labels like "modal verb" distinct
+    # instead of collapsing them to the generic "v".
     if pos_lower in POS_MAP:
         return POS_MAP[pos_lower]
-    # Then partial match with word boundaries, so "adverbial" doesn't match "verb"
-    for key, val in POS_MAP.items():
+
+    for key in sorted(POS_MAP, key=len, reverse=True):
+        val = POS_MAP[key]
         if re.search(rf'\b{re.escape(key)}\b', pos_lower):
             return val
-    if "noun" in pos_lower:
-        return "n"
-    if "verb" in pos_lower:
-        return "v"
+
     return None
+
+
+def format_pos_label(pos_norm: str) -> str:
+    labels = [
+        POS_DISPLAY.get(part, f"{part}.")
+        for part in pos_norm.split("+")
+        if part
+    ]
+    return " / ".join(labels)
+
+
+def is_valid_pos_norm(pos_norm: str | None) -> bool:
+    if not pos_norm:
+        return False
+    return all(part in VALID_POS for part in pos_norm.split("+") if part)
 
 
 def extract_phonetic(soup: BeautifulSoup) -> tuple[str, str]:
@@ -190,6 +276,19 @@ def strip_bracket_content(text: str) -> str:
 def strip_long_brackets_only(text: str, max_chinese_chars: int = 7) -> str:
     """Remove only bracket blocks whose Chinese char count exceeds the threshold."""
     def replacer(match: re.Match[str]) -> str:
+        """Regex replacer callback that decides whether to keep or drop a bracket block.
+
+        Called by re.sub() for each bracket match found in the text.
+        Counts Chinese characters inside the brackets; if the count exceeds
+        max_chinese_chars, the entire bracket block is removed (returns empty string).
+        Otherwise the original match is preserved unchanged.
+
+        Args:
+            match: A regex Match object for a bracket block pattern [（(](.*?)[）)].
+
+        Returns:
+            Empty string to remove the bracket block, or the original matched text to keep it.
+        """
         content = match.group(1)
         chinese_count = len(re.findall(r"[一-鿿]", content))
         if chinese_count > max_chinese_chars:
@@ -482,7 +581,7 @@ def extract_meaning_items(soup: BeautifulSoup) -> dict[str, list[dict[str, Any]]
         if not pos_tag:
             continue
         pos_norm = normalize_pos(pos_tag.get_text(strip=True))
-        if not pos_norm or pos_norm not in VALID_POS:
+        if not is_valid_pos_norm(pos_norm):
             continue
 
         sense_records = collect_sense_records(eroot)
@@ -499,6 +598,29 @@ def extract_meaning_items(soup: BeautifulSoup) -> dict[str, list[dict[str, Any]]
 
 
 def extract_meanings(soup: BeautifulSoup) -> dict[str, list[str]]:
+    """Extract Chinese meaning texts grouped by POS from an MDX entry's HTML.
+
+    Walks through all .oald-entry-root elements in the parsed HTML, collects
+    sense records for each valid POS, deduplicates and filters meaning fragments,
+    then returns a mapping from normalized POS key to a list of meaning strings.
+
+    The meaning joining logic works as follows:
+    - For single-sense entries, the qualifier (if any) is prepended to the text.
+    - For multi-sense entries, up to 2 primary fragments are selected from the
+      first sense record. If fewer than 2, follow-up fragments from subsequent
+      senses are used to fill the primary slot (up to 2 total).
+    - Remaining fragments from other senses become separate meaning items,
+      each with its own qualifier prepended.
+    - Fragments are deduplicated by a cleaned key (brackets and punctuation
+      removed) to avoid redundant meanings.
+
+    Args:
+        soup: A BeautifulSoup object parsed from an MDX entry's HTML.
+
+    Returns:
+        A dict mapping POS keys (e.g., "n", "v", "adj") to lists of meaning strings.
+        Empty meanings are filtered out.
+    """
     return {
         pos_norm: [meaning["text"] for meaning in meanings]
         for pos_norm, meanings in extract_meaning_items(soup).items()
@@ -507,6 +629,29 @@ def extract_meanings(soup: BeautifulSoup) -> dict[str, list[str]]:
 
 
 def extract_exchange(soup: BeautifulSoup) -> str:
+    """Extract word form exchanges (inflections) from an MDX entry's HTML.
+
+    Combines data from two sources:
+    1. The verb_forms_table: contains structured verb forms (3rd person singular,
+       past tense, past participle, present participle) mapped to compact keys.
+    2. The inflections block: contains plural forms and other inflected forms.
+
+    Verb forms from the table are mapped using EXCHANGE_LABELS (e.g., "thirdps" -> "3").
+    Invalid third-person forms ending in "ing" (like "understanding") are filtered out
+    since they are typically gerunds, not true 3rd person singular forms.
+
+    Inflection block forms are all tagged with "s:" (plural slot). Forms that already
+    appear in the verb_forms_table are skipped to avoid duplication, unless the block
+    explicitly mentions "plural" (to handle cases where a plural form coincidentally
+    matches a verb form).
+
+    Args:
+        soup: A BeautifulSoup object parsed from an MDX entry's HTML.
+
+    Returns:
+        An exchange string in the format "key:form/key:form/...", e.g. "3:walks/p:walked/s:walks".
+        Returns an empty string if no exchange forms are found.
+    """
     parts: list[str] = []
     vf_table = soup.select_one(".verb_forms_table")
     verb_forms: set[str] = set()
@@ -537,6 +682,157 @@ def extract_exchange(soup: BeautifulSoup) -> str:
                 continue
             parts.append(f"s:{text}")
     return "/".join(parts)
+
+
+def extract_verb_forms(soup: BeautifulSoup) -> list[dict[str, str]]:
+    """Extract structured verb form data from an MDX entry's verb_forms_table.
+
+    Parses the HTML table containing verb conjugations (root, 3rd person singular,
+    past tense, past participle, present participle) and returns a list of
+    structured form objects. Each object contains the form label (e.g., "过去式"),
+    the inflected word, optional subject pronoun (e.g., "I", "he/she/it"),
+    optional phonetic transcription, and the raw form type key.
+
+    Duplicate entries are deduplicated by a composite key of (form_type, label,
+    subject, word) to handle cases where the same form appears multiple times
+    in the table (e.g., shared past/past participle forms).
+
+    Args:
+        soup: A BeautifulSoup object parsed from an MDX entry's HTML.
+
+    Returns:
+        A list of dicts, each representing a verb form with keys:
+        - "label": Human-readable Chinese label (e.g., "过去式")
+        - "word": The inflected form text
+        - "form" (optional): Raw form type key (e.g., "past", "thirdps")
+        - "subject" (optional): Subject pronoun prefix if present
+        - "phonetic" (optional): Phonetic transcription without slashes
+    """
+    forms: list[dict[str, str]] = []
+    vf_table = soup.select_one(".verb_forms_table")
+    if not vf_table:
+        return forms
+
+    seen: set[tuple[str, str, str]] = set()
+    for tr in vf_table.select("tr"):
+        form_type = tr.get("form", "")
+        label = VERB_FORM_LABELS.get(form_type, normalize_display_text(tr.get_text(" ", strip=True)))
+        tds = tr.select("td")
+        if not tds:
+            continue
+
+        word_cell = tds[0]
+        prefix = word_cell.select_one(".vf_prefix")
+        subject = normalize_display_text(prefix.get_text(" ", strip=True)) if prefix else ""
+        if prefix:
+            prefix.extract()
+
+        form_word = normalize_display_text(word_cell.get_text(" ", strip=True))
+        if not form_word:
+            continue
+
+        phonetic_tag = tr.select_one(".phon")
+        item: dict[str, str] = {
+            "label": label,
+            "word": form_word,
+        }
+        if form_type:
+            item["form"] = form_type
+        if subject:
+            item["subject"] = subject
+        if phonetic_tag:
+            item["phonetic"] = phonetic_tag.get_text(strip=True).replace("/", "")
+
+        key = (item.get("form", ""), item["label"], item.get("subject", ""), item["word"])
+        if key in seen:
+            continue
+        seen.add(key)
+        forms.append(item)
+
+    return forms
+
+
+def normalize_word_family_pos(pos_text: str) -> str:
+    normalized = normalize_display_text(pos_text).lower().replace(".", "")
+    return WORD_FAMILY_POS.get(normalized, normalized)
+
+
+def extract_word_family(soup: BeautifulSoup) -> list[dict[str, str]]:
+    containers = soup.select('[unbox="wordfamily"], .wordfamily, .word_family')
+    if not containers:
+        containers = [
+            tag.parent
+            for tag in soup.find_all(string=re.compile(r"\bWord Family\b", re.I))
+            if tag.parent
+        ]
+
+    result: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for container in containers:
+        text = normalize_display_text(container.get_text(" ", strip=True))
+        if "word family" not in text.lower():
+            continue
+
+        structured_items = []
+        for item in container.select(".p"):
+            word_tag = item.select_one(".wfw")
+            pos_tag = item.select_one(".wfp")
+            if not word_tag or not pos_tag:
+                continue
+            word_text = normalize_display_text(word_tag.get_text(" ", strip=True))
+            pos = normalize_word_family_pos(pos_tag.get("wfp") or pos_tag.get_text(" ", strip=True))
+            if not word_text or not pos:
+                continue
+            key = (word_text.lower(), pos)
+            if key in seen:
+                continue
+            seen.add(key)
+            structured_items.append({"word": word_text, "pos": pos, "relation": "词族"})
+        if structured_items:
+            result.extend(structured_items)
+            continue
+
+        for bracket in container.find_all(string=re.compile(r"[（(]\s*[≠=]")):
+            bracket.extract()
+
+        candidates = container.select(".w, .xh, .headword, a[href*='entry://'], a[href*='/definition/']")
+        if candidates:
+            for candidate in candidates:
+                word_text = normalize_display_text(candidate.get_text(" ", strip=True))
+                if not word_text or word_text.lower() == "word family":
+                    continue
+                next_text = ""
+                sibling = candidate.find_next_sibling()
+                if sibling:
+                    next_text = normalize_display_text(sibling.get_text(" ", strip=True))
+                pos = normalize_word_family_pos(next_text)
+                if pos not in WORD_FAMILY_POS.values():
+                    parent_text = normalize_display_text(candidate.parent.get_text(" ", strip=True)) if candidate.parent else ""
+                    match = re.search(rf"\b{re.escape(word_text)}\b\s+(noun|verb|adjective|adverb|n\.?|v\.?|adj\.?|adv\.?)\b", parent_text, re.I)
+                    pos = normalize_word_family_pos(match.group(1)) if match else ""
+                if not pos:
+                    continue
+                key = (word_text.lower(), pos)
+                if key not in seen:
+                    seen.add(key)
+                    result.append({"word": word_text, "pos": pos, "relation": "词族"})
+            if result:
+                return result
+
+        clean_text = re.sub(r"[（(]\s*[≠=].*?[）)]", " ", text)
+        matches = re.finditer(r"\b([A-Za-z][A-Za-z'-]*)\b\s+(noun|verb|adjective|adverb|n\.?|v\.?|adj\.?|adv\.?)\b", clean_text, re.I)
+        for match in matches:
+            word_text = match.group(1)
+            if word_text.lower() == "word":
+                continue
+            pos = normalize_word_family_pos(match.group(2))
+            key = (word_text.lower(), pos)
+            if key not in seen:
+                seen.add(key)
+                result.append({"word": word_text, "pos": pos, "relation": "词族"})
+
+    return result
 
 
 def normalize_exchange_forms(value: str) -> list[str]:
@@ -605,6 +901,36 @@ def _looks_like_superlative(base_word: str, form: str) -> bool:
 def move_surface_comparatives_into_exchange_slots(
     exchange_values: dict[str, list[str]], pos_summary: str, base_word: str = ""
 ) -> dict[str, list[str]]:
+    """Move comparative/superlative forms from the 's' slot to 'c'/'sup' slots.
+
+    The MDX source sometimes places comparative and superlative forms in the
+    generic 's' exchange slot (alongside plural forms). This function scans
+    the 's' slot, identifies forms that are actually comparatives or superlatives,
+    and moves them to their proper dedicated slots ('c' for comparative, 'sup'
+    for superlative).
+
+    Movement logic:
+    - Known irregular comparatives (e.g., "more", "better") -> 'c' slot.
+    - Known irregular superlatives (e.g., "most", "best") -> 'sup' slot.
+    - Multi-word forms (contain space) -> stay in 's' (not comparative/superlative).
+    - Forms ending in "er" with adjective/adverb POS -> 'c' slot if they look
+      like regular comparatives of the base word.
+    - Forms ending in "est" with adjective/adverb POS -> 'sup' slot if they look
+      like regular superlatives of the base word.
+    - All other forms remain in the 's' slot.
+
+    If the 's' slot becomes empty after movement, it is removed entirely.
+
+    Args:
+        exchange_values: Parsed exchange values dict (key -> list of forms).
+        pos_summary: POS summary string (e.g., "n:50/v:50") to check for adj/adv.
+        base_word: The base word for comparative/superlative validation. Optional;
+            if empty, endings are trusted without base-word verification.
+
+    Returns:
+        A new exchange_values dict with comparatives/superlatives moved to
+        their proper slots. The original dict is not mutated.
+    """
     s_forms = exchange_values.get("s", [])
     if not s_forms:
         return exchange_values
@@ -672,6 +998,19 @@ def has_standalone_entry(word: str, lookup: dict[str, str]) -> bool:
 
 
 def build_relation(word: str, label: str) -> dict[str, str]:
+    """Build a simple relation object linking a word to a label.
+
+    Creates a minimal relation dict used for child/parent relation maps.
+    The relation represents that `word` is related to the base word via
+    the inflection type described by `label` (e.g., "复数", "过去式").
+
+    Args:
+        word: The related word (inflected form or base form).
+        label: The relation label describing the inflection type.
+
+    Returns:
+        A dict with "word" and "label" keys.
+    """
     return {"word": word, "label": label}
 
 
@@ -685,6 +1024,37 @@ def build_relation_edge(*, relation_type: str, target: str, label: str,
                         direction: str = "outgoing", navigable: bool = True,
                         display: str = "exchange", source: str = "exchange",
                         primary: bool = False) -> dict[str, Any]:
+    """Build a structured relation edge for the relation_edges_map.
+
+    A relation edge represents a directed link from a base word to a related
+    form (or vice versa). It includes metadata about the relation type,
+    navigability (whether the user can click through), display category,
+    and source of the relation (exchange data vs. derived inference).
+
+    The edge structure includes:
+    - type: The relation category ("inflection", "origin", "xref")
+    - target: The target word this edge points to
+    - label: Human-readable label (e.g., "复数", "过去式")
+    - direction: "outgoing" (base -> form) or "incoming" (form -> base)
+    - navigable: Whether the UI should make this edge clickable
+    - display: Display category ("exchange" or "reference")
+    - source: Origin of the relation ("exchange", "derived", "protected")
+    - pos_scope (optional): List of POS keys this relation applies to
+    - primary (optional): Whether this is the primary relation for the target
+
+    Args:
+        relation_type: Category of relation ("inflection", "origin", "xref").
+        target: The target word this edge points to.
+        label: Human-readable label for the relation.
+        direction: Edge direction, "outgoing" or "incoming". Defaults to "outgoing".
+        navigable: Whether the edge is clickable in the UI. Defaults to True.
+        display: Display category for UI rendering. Defaults to "exchange".
+        source: Origin of the relation data. Defaults to "exchange".
+        primary: Whether this is the primary relation. Defaults to False.
+
+    Returns:
+        A dict representing the relation edge with all metadata fields.
+    """
     edge: dict[str, Any] = {
         "type": relation_type,
         "target": target,
@@ -723,6 +1093,29 @@ def parse_pos_keys(pos_summary: str) -> set[str]:
 
 
 def classify_surface_s_relations(entry: dict[str, Any]) -> tuple[bool, set[str]]:
+    """Classify surface 's' slot forms to distinguish plural from comparative/superlative.
+
+    The 's' exchange slot is overloaded: it can contain plural forms (for nouns),
+    but MDX sometimes also places comparative/superlative-like forms there
+    (e.g., "faster", "fastest" for adjectives). This function determines which
+    forms in the 's' slot should be treated as genuine plural relations vs.
+    which should be blocked (because they are actually comparatives/superlatives).
+
+    Classification logic:
+    - If the entry has no noun POS, all 's' forms are blocked (no plural relations).
+    - If the entry has adjective/adverb POS, forms ending in "er"/"est" that are
+      NOT also in the 3rd-person slot are flagged as blocked (they are comparatives).
+    - Forms matching known irregular comparatives (e.g., "more", "better") are also blocked.
+    - At least one non-blocked form must remain for plural relations to be allowed.
+
+    Args:
+        entry: A parsed entry dict containing "pos" and "exchange" fields.
+
+    Returns:
+        A tuple of (allow_relation, blocked_forms):
+        - allow_relation: True if at least one 's' form can be treated as plural.
+        - blocked_forms: Set of lowercase form strings that should NOT be treated as plural.
+    """
     pos_keys = parse_pos_keys(entry.get("pos", ""))
     exchange_values = parse_exchange_values(entry.get("exchange", ""))
     s_forms = exchange_values.get("s", [])
@@ -748,7 +1141,29 @@ def classify_surface_s_relations(entry: dict[str, Any]) -> tuple[bool, set[str]]
 
 
 def is_regular_inflection(base_word: str, form: str, form_key: str) -> bool:
-    """Check if form is a regular inflection of base_word."""
+    """Check if a given form is a regular inflection of the base word.
+
+    Determines whether `form` can be derived from `base_word` using standard
+    English inflection rules for the given `form_key`. This is used to
+    distinguish regular inflections (which can be inferred algorithmically)
+    from irregular ones (which must be explicitly recorded).
+
+    Regular inflection rules covered:
+    - "s" (plural): +s, +es, f->ves, fe->ves, y->ies
+    - "3" (3rd person singular): +s, +es
+    - "i" (present participle): +ing, e->ing, consonant doubling (run->running)
+    - "c" (comparative): +er, e->r, consonant doubling, y->ier
+    - "sup" (superlative): +est, e->st, consonant doubling, y->iest
+    - "p"/"d" (past/past participle): +ed, e->d, consonant doubling, y->ied
+
+    Args:
+        base_word: The base/lemma form of the word.
+        form: The potentially inflected form to check.
+        form_key: The exchange key indicating the inflection type ("s", "3", "i", "c", "sup", "p", "d").
+
+    Returns:
+        True if `form` is a regular inflection of `base_word` for the given type.
+    """
     base = base_word.lower()
     f = form.lower()
 
@@ -815,7 +1230,28 @@ def is_regular_inflection(base_word: str, form: str, form_key: str) -> bool:
 
 
 def infer_plural_form(word: str) -> str | None:
-    """Infer the regular plural form of a noun. Returns None if irregular."""
+    """Infer the regular plural form of a noun using English pluralization rules.
+
+    Applies standard English pluralization rules to derive the plural form
+    from a singular noun. Irregular plurals are looked up in IRREGULAR_PLURALS
+    rather than being generated by rule.
+
+    Pluralization rules applied (in order):
+    1. Irregular lookup: Check IRREGULAR_PLURALS for exceptions (e.g., "child" -> "children").
+    2. Sibilants: Nouns ending in s, x, z, ch, sh -> +es (box -> boxes).
+    3. Y-rule: Consonant + y -> -y + ies (baby -> babies).
+    4. F-rule: Ending in f -> -f + ves (wolf -> wolves).
+    5. FE-rule: Ending in fe -> -fe + ves (wife -> wives).
+    6. O-rule: Consonant + o -> +es (potato -> potatoes).
+    7. Default: Simply add +s (cat -> cats).
+
+    Args:
+        word: The singular noun form.
+
+    Returns:
+        The inferred plural form, or None if the input is empty/whitespace.
+        For irregular nouns, returns the known irregular plural from IRREGULAR_PLURALS.
+    """
     w = word.lower().strip()
     if not w:
         return None
@@ -1088,7 +1524,7 @@ def build_exchange_lines(exchange: str) -> list[str]:
 
 def build_translation_parts(pos_data: dict[str, list[str]]) -> list[dict[str, Any]]:
     return [
-        {"pos": f"{pos_norm}.", "meanings": [*meanings]}
+        {"pos": format_pos_label(pos_norm), "meanings": [*meanings]}
         for pos_norm, meanings in pos_data.items()
         if meanings
     ]
@@ -1097,7 +1533,7 @@ def build_translation_parts(pos_data: dict[str, list[str]]) -> list[dict[str, An
 def build_translation_detail_parts(pos_data: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     return [
         {
-            "pos": f"{pos_norm}.",
+            "pos": format_pos_label(pos_norm),
             "details": [
                 {
                     "text": detail["text"],
@@ -1178,8 +1614,10 @@ def parse_entry(html: str, word: str, lookup: dict[str, str] = {}) -> dict | Non
     translation_detail_parts = build_translation_detail_parts(meaning_items)
     translation = build_translation(cn_data)
     phrasal_verbs = extract_phrasal_verbs(soup, lookup)
+    verb_forms = extract_verb_forms(soup)
+    word_family = extract_word_family(soup)
 
-    return {
+    entry = {
         "word": word,
         "phonetic": phon_br,
         "phonetic_us": phon_us,
@@ -1190,6 +1628,24 @@ def parse_entry(html: str, word: str, lookup: dict[str, str] = {}) -> dict | Non
         "exchange": exchange,
         "phrasal_verbs": phrasal_verbs,
     }
+    if verb_forms:
+        entry["verb_forms"] = verb_forms
+    if word_family:
+        entry["word_family"] = word_family
+    return entry
+
+
+def propagate_word_families(entries: dict[str, dict[str, Any]]) -> None:
+    for entry in list(entries.values()):
+        family = entry.get("word_family")
+        if not family:
+            continue
+        for item in family:
+            member_word = item.get("word", "").lower()
+            member_entry = entries.get(member_word)
+            if not member_entry or member_entry.get("word_family"):
+                continue
+            member_entry["word_family"] = [dict(family_item) for family_item in family]
 
 
 def build_lookup_index(mdx: MDX) -> tuple[dict[str, str], dict[str, str], int]:
@@ -1276,7 +1732,40 @@ def parse_non_link_entries(lookup: dict[str, str]) -> dict[str, dict[str, Any]]:
     return standalone_cache
 
 
-def main():
+def main() -> None:
+    """Run the complete OALDPE MDX to JSON conversion pipeline.
+
+    The pipeline consists of four stages:
+
+    Stage A - Parse source entries from MDX:
+    1. Build a lookup index from all MDX entries, handling duplicate keys by
+       preferring non-link entries over @@@LINK= aliases.
+    2. Resolve @@@LINK= chains to their final target words.
+    3. Parse all non-link entries into structured entry dicts (phonetics,
+       translations, POS, exchange forms, phrasal verbs, word families).
+    4. Propagate word family data to members that lack their own family info.
+
+    Stage C - Derive morphology & relations:
+    1. Build relation metadata: child relations (base -> inflected forms),
+       parent relations (inflected form -> base), relation edges, and blocked
+       surface forms that should not create relations.
+    2. Finalize standalone entries by attaching relation edges and determining
+       parent/inflection status for each entry.
+    3. Process link entries: convert @@@LINK= aliases into either inflection
+       entries (if they map to a known inflected form) or alias entries.
+    4. Materialize missing inflection entries: create synthetic entries for
+       inflected forms that don't have their own standalone entry.
+
+    Stage D - Render & shard:
+    1. Group all finalized entries by first character.
+    2. Write each group to a compact JSON shard file in the output directory.
+    3. Print a summary with entry counts and file sizes.
+
+    Side effects:
+        - Reads the MDX file at MDX_PATH.
+        - Writes JSON shard files to OUTPUT_DIR.
+        - Prints progress and summary to stdout.
+    """
     print("Loading MDX dictionary...")
     mdx = MDX(MDX_PATH, encoding="utf-8")
     total = len(mdx)
@@ -1286,6 +1775,7 @@ def main():
     lookup, alias_targets, total = build_lookup_index(mdx)
     final_target = resolve_link_chains(lookup, alias_targets)
     standalone_cache = parse_non_link_entries(lookup)
+    propagate_word_families(standalone_cache)
 
     # Stage C: Derive morphology & relations
     (
@@ -1297,6 +1787,7 @@ def main():
 
     finalized_entries = finalize_standalone_entries(
         standalone_cache,
+        child_relations_map,
         parent_relations_map,
         relation_edges_map,
     )
@@ -1305,6 +1796,7 @@ def main():
         finalized_entries,
         final_target,
         parent_relations_map,
+        relation_edges_map,
         blocked_surface_forms_by_base,
         lookup,
     )
@@ -1491,6 +1983,7 @@ def build_relation_metadata(
 
 def finalize_standalone_entries(
     standalone_cache: dict[str, dict[str, Any]],
+    child_relations_map: dict[str, list[dict[str, str]]],
     parent_relations_map: dict[str, list[dict[str, str]]],
     relation_edges_map: dict[str, list[dict[str, Any]]],
 ) -> dict[str, dict[str, Any]]:
@@ -1639,6 +2132,7 @@ def process_link_entries(
     finalized_entries: dict[str, dict[str, Any]],
     final_target: dict[str, str],
     parent_relations_map: dict[str, list[dict[str, str]]],
+    relation_edges_map: dict[str, list[dict[str, Any]]],
     blocked_surface_forms_by_base: dict[str, set[str]],
     lookup: dict[str, str],
 ) -> int:
@@ -1767,7 +2261,31 @@ def process_link_entries(
 
 
 def materialize_missing_inflections(finalized_entries: dict[str, dict[str, Any]]) -> int:
-    """Stage C-4: Create inflection entries for missing child relation forms."""
+    """Stage C-4: Create inflection entries for forms that lack standalone entries.
+
+    After building relation metadata, some inflected forms (e.g., "walked", "cats")
+    may not have their own standalone entry in the dictionary. This function scans
+    all outgoing inflection relations on standalone entries and creates synthetic
+    inflection entries for any target form that does not already exist in
+    finalized_entries.
+
+    Each materialized entry is a shallow copy of the parent entry with:
+    - POS and translation filtered to only the relevant inflection type
+    - word set to the inflected form
+    - linked_word set to the parent/base word
+    - entry_kind set to "inflection"
+    - A primary "origin" relation edge pointing back to the parent
+
+    This ensures that querying any inflected form returns a meaningful result
+    with the parent's definitions, rather than a missing entry.
+
+    Args:
+        finalized_entries: The dictionary of all finalized entries, keyed by
+            lowercase word. Will be mutated in-place to add new entries.
+
+    Returns:
+        The number of new inflection entries created.
+    """
     print("Stage C-4: Materializing missing inflection entries...")
     materialized = 0
     for word_key, entry in list(finalized_entries.items()):
@@ -1775,7 +2293,7 @@ def materialize_missing_inflections(finalized_entries: dict[str, dict[str, Any]]
             continue
 
         for relation in entry.get("relations", []):
-            if relation.get("relation_type") != "inflection":
+            if relation.get("type") != "inflection":
                 continue
             if relation.get("direction") != "outgoing":
                 continue
@@ -1791,7 +2309,28 @@ def materialize_missing_inflections(finalized_entries: dict[str, dict[str, Any]]
 
 
 def write_shards(finalized_entries: dict[str, dict[str, Any]], total: int, processed: int, link_processed: int) -> None:
-    """Stage D: Split entries into shards and write JSON files."""
+    """Stage D: Split entries into alphabetically-sharded JSON files.
+
+    Groups all finalized entries by their first character (a-z) and writes
+    each group to a separate JSON file (e.g., "a.json", "b.json"). This
+    sharding strategy allows the Bob plugin to load only the relevant shard
+    on demand, reducing memory usage and improving lookup speed.
+
+    Shard writing strategy:
+    - Entries are keyed by lowercase word; the first character determines the shard.
+    - Each shard is a self-contained JSON object mapping word -> entry dict.
+    - JSON is written with compact separators (",", ":") to minimize file size.
+    - The output directory is created if it doesn't exist.
+
+    After writing, prints a summary with entry counts and file sizes per shard.
+
+    Args:
+        finalized_entries: Complete dictionary of all entries (standalone,
+            inflection, and alias), keyed by lowercase word.
+        total: Total number of raw MDX entries (for reporting).
+        processed: Number of non-link entries parsed (for reporting).
+        link_processed: Number of link entries resolved (for reporting).
+    """
     print("Stage D: Preparing shards...")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     shards: dict[str, dict[str, dict[str, Any]]] = {}

@@ -46,6 +46,9 @@ try {
   execSync("npx tsc --noEmit", { stdio: "inherit", cwd: __dirname });
 } catch (e) {
   console.error("TypeScript check failed. Fix errors before building.");
+  if (e instanceof Error && e.message) {
+    console.error(e.message);
+  }
   process.exit(1);
 }
 
