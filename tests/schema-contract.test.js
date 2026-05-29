@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { getDictDir, getManifestPath } = require('./dict-path')
 
 const ENTRY_SCHEMA = {
   word: ['string', true],
@@ -29,7 +30,7 @@ const ENTRY_SCHEMA = {
 const VALID_ENTRY_KINDS = new Set(['standalone', 'inflection', 'alias'])
 
 function loadAllShards() {
-  const dictDir = path.join(__dirname, '..', 'dict')
+  const dictDir = getDictDir()
   const entries = {}
   for (const file of fs.readdirSync(dictDir)) {
     if (!file.endsWith('.json')) continue
@@ -251,4 +252,21 @@ test('word field is non-empty string for all entries', () => {
   }
   assert.equal(failures.length, 0,
     `${failures.length} entries with empty word: ${failures.slice(0, 5).join(', ')}`)
+})
+
+test('manifest schema is valid when build artifact manifest exists', () => {
+  const manifestPath = getManifestPath()
+  if (!fs.existsSync(manifestPath)) {
+    return
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+  assert.equal(typeof manifest.schemaVersion, 'string')
+  assert.equal(typeof manifest.dataVersion, 'string')
+  assert.equal(typeof manifest.generatedAt, 'string')
+  assert.equal(typeof manifest.entryCount, 'number')
+  assert.equal(typeof manifest.shardCount, 'number')
+  assert.equal(typeof manifest.danglingNavigableTargets, 'number')
+  assert.equal(typeof manifest.syntheticRelationCount, 'number')
+  assert.ok(Array.isArray(manifest.files))
 })

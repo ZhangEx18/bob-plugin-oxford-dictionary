@@ -3,12 +3,13 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { loadRuntime } = require('./_runtime')
+const { getDictDir, getShardPath, getManifestPath } = require('./dict-path')
 
 /**
  * Load all dictionary shards into a flat entries object and collect metadata.
  */
 function loadAllShards() {
-  const dictDir = path.join(__dirname, '..', 'dict')
+  const dictDir = getDictDir()
   const entries = {}
   const shards = []
 
@@ -84,13 +85,27 @@ test('every shard file is non-empty and loads as an object', () => {
 test('shard keys match first character of contained entry words', () => {
   for (const { key } of shards) {
     if (!/^[a-z]$/i.test(key)) continue
-    const shard = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'dict', `${key}.json`), 'utf8'))
+    const shard = JSON.parse(fs.readFileSync(getShardPath(key), 'utf8'))
     for (const word of Object.keys(shard)) {
       const firstChar = word.charAt(0).toLowerCase()
       assert.equal(firstChar, key.toLowerCase(),
         `word "${word}" in shard "${key}.json" should start with "${key}"`)
     }
   }
+})
+
+test('build manifest exists and exposes core metadata when present', () => {
+  const manifestPath = getManifestPath()
+  if (!fs.existsSync(manifestPath)) {
+    return
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+  assert.equal(typeof manifest.dataVersion, 'string')
+  assert.equal(typeof manifest.schemaVersion, 'string')
+  assert.equal(typeof manifest.entryCount, 'number')
+  assert.equal(typeof manifest.shardCount, 'number')
+  assert.equal(typeof manifest.generatedAt, 'string')
 })
 
 // ---------------------------------------------------------------------------

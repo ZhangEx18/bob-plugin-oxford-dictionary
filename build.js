@@ -4,6 +4,10 @@ const fs = require("fs");
 const path = require("path");
 const AdmZip = require("adm-zip");
 const { version } = require("./package.json");
+const {
+  resolveDictDir,
+  resolveManifestPath,
+} = require("./scripts/artifact_paths");
 
 const MAIN_JS_PATH = path.resolve(__dirname, "./dist/main.js");
 const PLUGIN_NAME = `bob-plugin-oald-dictionary${version}.bobplugin`;
@@ -27,14 +31,23 @@ const createZip = () => {
   ["icon.png"].forEach((file) => {
     zip.addLocalFile(`./static/${file}`);
   });
-  // Add dict shards
-  const dictDir = path.resolve(__dirname, "./dict");
+  // Add generated dict shards. Prefer the staged build output, but allow
+  // legacy dict/ fallback so local runtime debugging remains possible.
+  const dictDir = resolveDictDir();
   if (fs.existsSync(dictDir)) {
     const files = fs.readdirSync(dictDir);
     files.forEach((file) => {
       zip.addLocalFile(path.join(dictDir, file), "dict");
     });
   }
+  const manifestPath = resolveManifestPath();
+  if (fs.existsSync(manifestPath)) {
+    zip.addLocalFile(manifestPath, "", "manifest.json");
+  }
+  // ECDICT data is distributed separately — NOT bundled into the .bobplugin.
+  // Users download ECDICT shards independently and place them in the plugin
+  // data directory. The plugin detects ECDICT data at runtime and enables the
+  // fallback layer only if data is present.
   zip.addFile("info.json", JSON.stringify(INFO_JSON));
   zip.writeZip(isRelease ? ARTIFACT_PATH : path.resolve(__dirname, `./dist/${PLUGIN_NAME}`));
   console.log(new Date(), "Zip created");

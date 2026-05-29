@@ -5,6 +5,8 @@ import { getBackRelation, getChildRelations, getCrossReferences, getOriginSource
 import { buildMorphologyExchanges } from "./morphology";
 import { parseParts, parsePartsFromEntry, buildGroupedSourceParts, extractPosScopesFromPart, hasVisibleParts, partSeparator } from "./formatter";
 import { isWordQuery, queryYoudaoDictionary, queryYoudaoTranslation, getYoudaoLanguages } from "./youdao";
+import { queryEcdictEntry } from "./ecdict-loader";
+import { buildEcdictResult } from "./ecdict";
 
 /**
  * Resolves the display entry for a queried word.
@@ -157,9 +159,10 @@ function buildEntryView(queryWord: string): EntryView | null {
  *
  * Route 1 — English word query (single token, hyphenated allowed):
  *   Step 1: Try OALD offline dictionary first (fast, structured, no network)
- *   Step 2: If OALD miss, fallback to Youdao dictionary API (online, also structured)
- *   Step 3: If Youdao dict also miss, fallback to Youdao translation API (general translation)
- *   Step 4: If all fail, return notFound error
+ *   Step 2: If OALD miss, try ECDICT offline dictionary (broad coverage, no network)
+ *   Step 3: If ECDICT also miss, fallback to Youdao dictionary API (online, structured)
+ *   Step 4: If Youdao dict also miss, fallback to Youdao translation API (general translation)
+ *   Step 5: If all fail, return notFound error
  *
  * Route 2 — Multi-word phrase or non-English query:
  *   Directly call Youdao translation API for general text translation.
@@ -206,7 +209,17 @@ function translate(query: Bob.TranslateQuery, completion: Bob.Completion) {
       return;
     }
 
-    // OALD miss — start the Youdao fallback chain.
+    // OALD miss — try ECDICT offline fallback before hitting the network.
+    // ECDICT only participates in English single-word queries (already gated by isWordQuery).
+    const ecdictEntry = queryEcdictEntry(text);
+    if (ecdictEntry) {
+      // ECDICT hit — return offline dictionary result and skip Youdao entirely.
+      const result = buildEcdictResult(ecdictEntry, text);
+      completion({ result });
+      return;
+    }
+
+    // ECDICT miss — start the Youdao fallback chain.
     // This branch is kept isolated from OALD rendering so that missing words
     // can evolve independently without perturbing the offline dictionary path.
     queryYoudaoDictionary(text)

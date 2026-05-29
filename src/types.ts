@@ -129,3 +129,31 @@ export interface VerbFormItem {
   subject?: string;
   phonetic?: string;
 }
+
+/**
+ * Lightweight entry from ECDICT offline dictionary (offline fallback layer).
+ *
+ * Only carries the fields needed for a compact dictionary result:
+ * - word: headword (lowercase key in shard)
+ * - phonetic: IPA pronunciation string
+ * - translation: multi-line Chinese translation (may include POS prefixes)
+ * - pos: part-of-speech tag string
+ * - exchange: encoded morphology string (e.g. "p:went/d:gone/i:going/3:goes")
+ *   Mapping: 0=lemma, p=past tense, d=past participle, i=present participle,
+ *            3=3rd person singular, s=plural
+ *
+ * Fields NOT included from ECDICT (collins, oxford, tag, bnc, frq, detail, audio)
+ * are trimmed to reduce shard size per the constraint: "优先裁剪字段而不是放弃离线补词层".
+ */
+export interface EcdictEntry {
+  word: string;
+  phonetic: string;
+  translation: string;
+  pos: string;
+  exchange: string;
+}
+
+/** One shard file maps lowercase word → EcdictEntry */
+export interface EcdictShardCache {
+  [word: string]: EcdictEntry;
+}

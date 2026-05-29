@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { getDictDir, getShardPath } = require('./dict-path')
 
 function toLegacyRelation(edge) {
   return {
@@ -78,7 +79,7 @@ function decorateEntry(entry, allEntries) {
 }
 
 function loadShard(char) {
-  const dictPath = path.join(__dirname, '..', 'dict', `${char}.json`)
+  const dictPath = getShardPath(char)
   const shard = JSON.parse(fs.readFileSync(dictPath, 'utf8'))
   const allEntries = loadAllEntries()
   for (const entry of Object.values(shard)) {
@@ -91,7 +92,7 @@ function loadAllEntries() {
   if (loadAllEntries.cache) {
     return loadAllEntries.cache
   }
-  const dictDir = path.join(__dirname, '..', 'dict')
+  const dictDir = getDictDir()
   const entries = {}
 
   for (const file of fs.readdirSync(dictDir)) {

@@ -2,7 +2,7 @@ import * as Bob from "@bob-plug/core";
 import { DictEntry, EntryView, MorphologyItem } from "./types";
 import { EXTRA_PLURALS, getCrossReferences, getOriginSources, shouldExpandOriginSources } from "./relations";
 
-export const morphologyLabelOrder = ["原形", "复数", "过去式", "过去分词", "现在分词", "第三人称单数", "比较级", "最高级"];
+export const morphologyLabelOrder = ["原形", "复数", "第三人称单数", "过去式", "过去分词", "现在分词", "比较级", "最高级"];
 
 /**
  * Maps OALD verb form type codes to Chinese morphology labels.

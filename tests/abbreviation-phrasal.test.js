@@ -2,9 +2,10 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { getDictDir } = require('./dict-path')
 
 function loadAllEntries() {
-  const dictDir = path.join(__dirname, '..', 'dict')
+  const dictDir = getDictDir()
   const entries = {}
   for (const file of fs.readdirSync(dictDir)) {
     if (!file.endsWith('.json')) continue
