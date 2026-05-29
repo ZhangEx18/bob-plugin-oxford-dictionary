@@ -7,5 +7,6 @@ release/*.bobplugin
 !release/bob-plugin-oald-dictionary2.1.1.bobplugin
 !release/bob-plugin-oald-dictionary3.2.5.bobplugin
 dict/
+.cache/
 vendor/oald/OALD 2024.09/stardict.db
 vendor/oald/OALD 2024.09/**/.DS_Store

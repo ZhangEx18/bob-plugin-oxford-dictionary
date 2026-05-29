@@ -3,10 +3,11 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { runTranslate } = require('./_runtime')
+const { getShardPath } = require('./dict-path')
 const DISPLAY_SEPARATOR = '\u00A0'
 
 function loadShard(char) {
-  const dictPath = path.join(__dirname, '..', 'dict', `${char}.json`)
+  const dictPath = getShardPath(char)
   return JSON.parse(fs.readFileSync(dictPath, 'utf8'))
 }
 
@@ -56,10 +57,10 @@ test('decide renders phrasal verbs, verb forms, then word-family display once', 
 
   const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
   assert.deepEqual(JSON.parse(JSON.stringify(exchangeRows.slice(-4))), [
+    '第三人称单数:decides',
     '过去式:decided',
     '过去分词:decided',
     '现在分词:deciding',
-    '第三人称单数:decides',
   ])
 
   assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.relatedWordParts)), [
@@ -237,10 +238,10 @@ test('runtime uses structured verb_forms when exchange relations are absent', as
   const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
 
   assert.deepEqual(JSON.parse(JSON.stringify(exchangeRows.slice(-4))), [
+    '第三人称单数:decides',
     '过去式:decided',
     '过去分词:decided',
     '现在分词:deciding',
-    '第三人称单数:decides',
   ])
 })
 

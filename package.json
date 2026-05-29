@@ -1,10 +1,12 @@
 {
   "name": "bob-plugin-oald-dictionary",
-  "version": "5.6.0",
+  "version": "7.0.0",
   "description": "Oxford Advanced Learner's Dictionary 10th Edition for Bob",
   "author": "oald-user",
   "license": "MIT",
   "scripts": {
+    "build:dict": "python3 scripts/build_oald_data.py",
+    "build:ecdict": "python3 scripts/build_ecdict_data.py",
     "test": "node --test tests/*.test.js",
     "lint": "npx tsc --noEmit",
     "build": "node build.js"
