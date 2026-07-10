@@ -19,8 +19,8 @@ function youdaoDictionaryMockResponse(word, overrides = {}) {
   return {
     ec: {
       word: {
-        ukphone: "ˌəʊvəˈbɔː(r)",
-        usphone: "ˌoʊvərˈbɔːr",
+        ukphone: "[/ˌəʊvəˈbɔː(r)/]",
+        usphone: "/ˌoʊvərˈbɔːr/",
         trs: [
           {
             pos: "v.",
@@ -74,6 +74,47 @@ test('decide renders phrasal verbs, verb forms, then word-family display once', 
   ])
 })
 
+test('track phrasal verb renders only on standalone track entry', async () => {
+  const track = await runTranslate('track')
+  assert.ok(
+    track.toDict.parts.some((part) => part.part === 'track down'),
+    `track should render track down, got: ${JSON.stringify(track.toDict.parts)}`,
+  )
+
+  for (const word of ['tracks', 'tracked']) {
+    const result = await runTranslate(word)
+    const partNames = result.toDict.parts.map((part) => part.part)
+    const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
+
+    assert.ok(!partNames.includes('track down'), `${word} should not render track down`)
+    assert.deepEqual(JSON.parse(JSON.stringify(exchangeRows)), ['原形:track'])
+  }
+})
+
+test('roots pack remains packaged data and is not rendered in 8.4.2 results', async () => {
+  const result = await runTranslate('track', {
+    'packs/roots/latest/manifest.json': {
+      schemaVersion: '1.0.0',
+      dataVersion: 'latest',
+      packType: 'roots',
+      entryCount: 1,
+      shardCount: 1,
+      layout: { shardSubdir: 'words', shardExtension: '.json' },
+      files: [{ name: 't.json' }],
+    },
+    'packs/roots/latest/words/t.json': {
+      track: { rootBreakdown: 'ROOTS_SENTINEL', etymology: 'test-only roots payload' },
+    },
+  })
+
+  const rendered = JSON.stringify({
+    parts: result.toDict.parts,
+    additions: result.toDict.additions,
+    addtions: result.toDict.addtions,
+  })
+  assert.doesNotMatch(rendered, /ROOTS_SENTINEL|test-only roots payload/)
+})
+
 test('every is retained as an OALD determiner entry', async () => {
   const result = await runTranslate('every')
 
@@ -101,6 +142,7 @@ test('decision renders OALD word-family peers without generated guesses', async 
       ],
     },
   ])
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.additions || [])), [])
 })
 
 test('OALD miss falls back to Youdao dictionary for missing words like overbore', async () => {
@@ -119,6 +161,10 @@ test('OALD miss falls back to Youdao dictionary for missing words like overbore'
   assert.equal(result.raw.provider, 'youdao-dict')
   assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.parts)), [
     { part: 'v.', means: ['overbear 的过去式'] },
+  ])
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.phonetics)), [
+    { type: 'uk', value: 'ˌəʊvəˈbɔː(r)' },
+    { type: 'us', value: 'ˌoʊvərˈbɔːr' },
   ])
   assert.ok(result.toDict.exchanges.some((item) => item.name === '原形' && item.words.includes('overbear')))
   assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), [])
@@ -233,7 +279,7 @@ test('runtime uses structured verb_forms when exchange relations are absent', as
   }
 
   const result = await runTranslate('decide', {
-    'dict/d.json': JSON.stringify(modifiedShard),
+    'packs/oald/2024.09/dict/d.json': JSON.stringify(modifiedShard),
   })
   const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
 
@@ -263,7 +309,7 @@ test('fallback display keeps compound OALD POS blocks when origin scope matches'
   }
 
   const result = await runTranslate('happier', {
-    'dict/h.json': JSON.stringify(modifiedShard),
+    'packs/oald/2024.09/dict/h.json': JSON.stringify(modifiedShard),
   })
 
   assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [
@@ -432,7 +478,7 @@ test('runtime prefers translation_parts when present', async () => {
   }
 
   const result = await runTranslate('obtain', {
-    'dict/o.json': JSON.stringify(modifiedShard),
+    'packs/oald/2024.09/dict/o.json': JSON.stringify(modifiedShard),
   })
 
   assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [
@@ -451,7 +497,7 @@ test('runtime falls back to translation string when translation_parts is absent'
   }
 
   const result = await runTranslate('obtain', {
-    'dict/o.json': JSON.stringify(modifiedShard),
+    'packs/oald/2024.09/dict/o.json': JSON.stringify(modifiedShard),
   })
 
   assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [
@@ -471,7 +517,7 @@ test('runtime falls back to translation string when translation_parts is unusabl
   }
 
   const result = await runTranslate('obtain', {
-    'dict/o.json': JSON.stringify(modifiedShard),
+    'packs/oald/2024.09/dict/o.json': JSON.stringify(modifiedShard),
   })
 
   assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [

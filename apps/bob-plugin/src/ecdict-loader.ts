@@ -1,4 +1,5 @@
 import { EcdictShardCache } from "./types";
+import { loadPackShard, resolvePack } from "./pack-loader";
 
 // - null  = not yet probed (first query triggers a check)
 // - true  = data directory found, shard loading enabled
@@ -8,12 +9,7 @@ let ecdictAvailable: boolean | null = null;
 function isEcdictAvailable(): boolean {
   if (ecdictAvailable !== null) return ecdictAvailable;
 
-  try {
-    const probe = $file.read("ecdict/a.json");
-    ecdictAvailable = probe != null;
-  } catch {
-    ecdictAvailable = false;
-  }
+  ecdictAvailable = resolvePack("ecdict") != null;
 
   if (!ecdictAvailable) {
     console.log("[ecdict-loader] ECDICT data not found — skipping offline fallback");
@@ -30,19 +26,10 @@ export function loadEcdictShard(char: string): EcdictShardCache | null {
     return shardCache.get(char)!;
   }
 
-  try {
-    const data = $file.read(`ecdict/${char}.json`);
-    if (!data) return null;
-
-    const json = data.toUTF8();
-    if (!json) return null;
-
-    const shard = JSON.parse(json) as EcdictShardCache;
-    shardCache.set(char, shard);
-    return shard;
-  } catch {
-    return null;
-  }
+  const shard = loadPackShard<EcdictShardCache>("ecdict", char);
+  if (!shard) return null;
+  shardCache.set(char, shard);
+  return shard;
 }
 
 export function queryEcdictEntry(word: string): import("./types").EcdictEntry | null {

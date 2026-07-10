@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import normalize_core as core
+from .normalize_core import parse_entry, propagate_word_families
+from .shared_core import apply_relation_metadata
 from .state import StateStore
 
 
@@ -16,8 +17,7 @@ def _flush_chunk(store: StateStore, chunk: list[tuple[str, dict[str, Any]]]) -> 
     chunk.clear()
 
 
-def run_normalize(mdx_path: str, store: StateStore) -> dict[str, Any]:
-    core.MDX_PATH = mdx_path
+def run_normalize(store: StateStore) -> dict[str, Any]:
     lookup = store.load_all("extract_lookup")
     if not lookup:
         raise RuntimeError("extract stage state is missing")
@@ -33,12 +33,12 @@ def run_normalize(mdx_path: str, store: StateStore) -> dict[str, Any]:
         if html.startswith("@@@LINK="):
             continue
 
-        data = core.parse_entry(html, word, lookup)
+        data = parse_entry(html, word, lookup)
         if data is None:
             skipped += 1
             continue
 
-        normalized_entry = core.apply_relation_metadata(
+        normalized_entry = apply_relation_metadata(
             data,
             entry_kind="standalone",
             display_word=word,
@@ -54,7 +54,7 @@ def run_normalize(mdx_path: str, store: StateStore) -> dict[str, Any]:
 
     _flush_chunk(store, pending_rows)
     print(f"Stage A complete: {processed} entries, {skipped} skipped")
-    core.propagate_word_families(standalone_cache)
+    propagate_word_families(standalone_cache)
     store.replace_many_chunked("normalized_entries", list(standalone_cache.items()))
     extract_summary = store.load_one("meta", "extract_summary") or {}
     return {

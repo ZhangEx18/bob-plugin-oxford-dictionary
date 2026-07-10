@@ -157,3 +157,37 @@ export interface EcdictEntry {
 export interface EcdictShardCache {
   [word: string]: EcdictEntry;
 }
+
+/** One root/affix in a RootEntry */
+export interface RootInfo {
+  root: string;
+  meaning: string;
+  relatedWords: string[];
+}
+
+/** Word root/affix data from preprocessing pipeline */
+export interface RootEntry {
+  etymology?: string;
+  rootBreakdown?: string;
+  roots?: RootInfo[];
+}
+
+/** Compact root display produced at runtime for the short inline format. */
+export interface RootDisplayLine {
+  text: string;
+}
+
+/** Manifest describing one externally managed data pack. */
+export interface DataPackManifest {
+  schemaVersion: string;
+  dataVersion: string;
+  packType: "oald" | "ecdict" | "roots";
+  shardCount: number;
+  entryCount: number;
+  generatedAt?: string;
+  files?: Array<{ name: string; sha256?: string; size?: number }>;
+  layout?: {
+    shardSubdir?: string;
+    shardExtension?: string;
+  };
+}

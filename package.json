@@ -1,22 +1,18 @@
 {
-  "name": "bob-plugin-oald-dictionary",
-  "version": "7.0.0",
-  "description": "Oxford Advanced Learner's Dictionary 10th Edition for Bob",
-  "author": "oald-user",
-  "license": "MIT",
+  "name": "bob-plugin-oald-dictionary-workspace",
+  "private": true,
+  "workspaces": [
+    "apps/bob-plugin"
+  ],
   "scripts": {
-    "build:dict": "python3 scripts/build_oald_data.py",
-    "build:ecdict": "python3 scripts/build_ecdict_data.py",
+    "lint": "npm run lint --workspace bob-plugin-oald-dictionary",
     "test": "node --test tests/*.test.js",
-    "lint": "npx tsc --noEmit",
-    "build": "node build.js"
-  },
-  "dependencies": {},
-  "devDependencies": {
-    "@bob-plug/core": "^0.1.4",
-    "@types/node": "^25.9.1",
-    "adm-zip": "^0.5.9",
-    "esbuild": "^0.14.48",
-    "typescript": "^6.0.3"
+    "test:fast": "node --test tests/pure-functions.test.js tests/edge-cases.test.js tests/abbreviation-phrasal.test.js tests/artifact-paths.test.js tests/oald-pipeline-core.test.js tests/oald-pipeline-integration.test.js tests/release-validation.test.js",
+    "build": "npm run build --workspace bob-plugin-oald-dictionary",
+    "dev": "npm run dev --workspace bob-plugin-oald-dictionary",
+    "build:release": "npm run build:release --workspace bob-plugin-oald-dictionary",
+    "build:dict": "python3 scripts/build_oald_data.py",
+    "build:roots": "python3 scripts/build_roots_data.py",
+    "build:ecdict": "python3 scripts/build_ecdict_data.py"
   }
 }

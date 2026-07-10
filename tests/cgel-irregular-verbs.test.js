@@ -4,8 +4,8 @@ const { runTranslate } = require('./_runtime')
 
 const fs = require('fs')
 
-const CGEL_CORPUS_PATH = '/Users/zex/Downloads/216-Irregular-verbs.pdf_by_PaddleOCR-VL-1.5.md'
-const hasLocalCorpus = fs.existsSync(CGEL_CORPUS_PATH)
+const CGEL_CORPUS_PATH = process.env.CGEL_CORPUS_PATH || ''
+const hasLocalCorpus = Boolean(CGEL_CORPUS_PATH) && fs.existsSync(CGEL_CORPUS_PATH)
 
 function parseIrregularVerbs() {
   if (!hasLocalCorpus) {

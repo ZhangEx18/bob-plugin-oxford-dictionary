@@ -7,7 +7,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BUILD_ROOT = PROJECT_ROOT / ".cache" / "oald-build"
 DEFAULT_OUTPUT_ROOT = DEFAULT_BUILD_ROOT / "output"
 DEFAULT_DB_PATH = DEFAULT_BUILD_ROOT / "build_state.sqlite"
-DEFAULT_MDX_PATH = PROJECT_ROOT / "vendor" / "oald" / "OALD 2024.09" / "oaldpe.mdx"
+DEFAULT_MDX_PATH = PROJECT_ROOT / "data" / "sources" / "oald" / "private" / "OALD 2024.09" / "oaldpe.mdx"
 
 SCHEMA_VERSION = "2.0.0"
 DATA_VERSION = "oald-2024.09"
@@ -38,4 +38,3 @@ def resolve_mdx_path(mdx_path: str | None = None) -> Path:
     if os.environ.get("OALD_MDX_PATH"):
         return Path(os.environ["OALD_MDX_PATH"]).resolve()
     return DEFAULT_MDX_PATH
-

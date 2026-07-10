@@ -44,30 +44,14 @@ const originSourcesCache = new WeakMap<DictEntry, OriginSource[]>();
 const shouldExpandCache = new WeakMap<DictEntry, boolean>();
 const wordFamilyCache = new WeakMap<DictEntry, WordFamilyItem[]>();
 
+export type RelationTargetExists = (word: string) => boolean;
+
 /** 将关系边转换为简化词关系（用于 UI 展示） */
 function relationEdgeToWordRelation(edge: RelationEdge): WordRelation {
   return {
     word: edge.target,
     label: edge.label,
   };
-}
-
-/**
- * Determines whether a relation edge target can be resolved at runtime.
- *
- * Some relation targets are synthetic forms (e.g. auto-generated inflections)
- * that do not exist as packaged query entries in the dictionary shards.
- * We keep the raw relation payload for debugging, but hide non-resolvable
- * jumps from runtime navigation to avoid dead links.
- *
- * A target is resolvable only when `edge.target` is non-empty and the
- * corresponding entry exists in the cache or shard.
- *
- * @param edge - relation edge to check
- * @returns true if the target can be navigated to
- */
-function isResolvableRelationTarget(edge: RelationEdge): boolean {
-  return !!edge.target && hasCachedOrShardEntry(edge.target);
 }
 
 /** 将关系边转换为返回关系（标签固定为"原形"） */
@@ -127,7 +111,7 @@ export function getBackRelation(entry: DictEntry): WordRelation | null {
  * Filters the entry's `relations` for outgoing `inflection` edges that:
  * - are marked `display === "exchange"` (visible in the exchange/morphology UI)
  * - are `navigable` (the target exists and can be jumped to)
- * - have a resolvable target (see `isResolvableRelationTarget`)
+ * - have a target present in the packaged dictionary
  *
  * These represent the inflected forms of the current word that should be
  * shown as clickable links (e.g. plurals, past tense, participles).
@@ -142,18 +126,25 @@ export function getChildRelations(entry: DictEntry): WordRelation[] {
     return childRelationsCache.get(entry)!;
   }
 
-  const relationChildren = (entry.relations || [])
+  const relationChildren = collectChildRelations(entry, hasCachedOrShardEntry);
+
+  childRelationsCache.set(entry, relationChildren);
+  return relationChildren;
+}
+
+export function collectChildRelations(
+  entry: DictEntry,
+  targetExists: RelationTargetExists,
+): WordRelation[] {
+  return (entry.relations || [])
     .filter((edge) => (
       edge.type === "inflection"
       && edge.direction === "outgoing"
       && edge.display === "exchange"
       && edge.navigable
-      && isResolvableRelationTarget(edge)
+      && targetExists(edge.target)
     ))
     .map(relationEdgeToWordRelation);
-
-  childRelationsCache.set(entry, relationChildren);
-  return relationChildren;
 }
 
 /** 获取当前词条的交叉引用关系（xref）
@@ -164,12 +155,24 @@ export function getCrossReferences(entry: DictEntry): WordRelation[] {
     return crossReferencesCache.get(entry)!;
   }
 
-  const relationRefs = (entry.relations || [])
-    .filter((edge) => edge.type === "xref" && edge.direction === "outgoing" && edge.navigable && isResolvableRelationTarget(edge))
-    .map(relationEdgeToWordRelation);
+  const relationRefs = collectCrossReferences(entry, hasCachedOrShardEntry);
 
   crossReferencesCache.set(entry, relationRefs);
   return relationRefs;
+}
+
+export function collectCrossReferences(
+  entry: DictEntry,
+  targetExists: RelationTargetExists,
+): WordRelation[] {
+  return (entry.relations || [])
+    .filter((edge) => (
+      edge.type === "xref"
+      && edge.direction === "outgoing"
+      && edge.navigable
+      && targetExists(edge.target)
+    ))
+    .map(relationEdgeToWordRelation);
 }
 
 /**
@@ -222,7 +225,7 @@ function getExtraOriginSources(entry: DictEntry): OriginSource[] {
  * @param filterFn - predicate to select which relation edges to include
  * @returns array of origin sources derived from matching edges
  */
-function collectOriginSources(
+function mapOriginSources(
   entry: DictEntry,
   filterFn: (edge: RelationEdge) => boolean,
 ): OriginSource[] {
@@ -257,39 +260,46 @@ export function getOriginSources(entry: DictEntry): OriginSource[] {
     return originSourcesCache.get(entry)!;
   }
 
-  const relationSources = collectOriginSources(
+  const originSources = collectOriginSources(entry, hasCachedOrShardEntry);
+
+  originSourcesCache.set(entry, originSources);
+  return originSources;
+}
+
+export function collectOriginSources(
+  entry: DictEntry,
+  targetExists: RelationTargetExists,
+): OriginSource[] {
+  const relationSources = mapOriginSources(
     entry,
-    (edge) => edge.type === "origin" && edge.direction === "outgoing" && edge.navigable && isResolvableRelationTarget(edge),
+    (edge) => (
+      edge.type === "origin"
+      && edge.direction === "outgoing"
+      && edge.navigable
+      && targetExists(edge.target)
+    ),
   );
 
-  const xrefSources = collectOriginSources(
+  const xrefSources = mapOriginSources(
     entry,
     (edge) =>
       edge.type === "xref" &&
       edge.direction === "outgoing" &&
       edge.navigable &&
-      isResolvableRelationTarget(edge) &&
+      targetExists(edge.target) &&
       !!inflectionPosScopeByLabel[edge.label],
   );
 
   const extraSources = getExtraOriginSources(entry);
   const allSources = [...relationSources, ...xrefSources, ...extraSources];
 
-  let result: OriginSource[];
-  if (allSources.length > 0) {
-    const seen = new Set<string>();
-    result = allSources.filter((source) => {
-      const key = `${source.word}:${source.label}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  } else {
-    result = [];
-  }
-
-  originSourcesCache.set(entry, result);
-  return result;
+  const seen = new Set<string>();
+  return allSources.filter((source) => {
+    const key = `${source.word}:${source.label}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
@@ -315,32 +325,32 @@ export function shouldExpandOriginSources(entry: DictEntry): boolean {
     return shouldExpandCache.get(entry)!;
   }
 
-  const sources = getOriginSources(entry);
-
-  let result = false;
-  if (sources.length > 0) {
-    const originKeys = new Set(
-      sources.map((source) => `${source.label}${source.posScope.join(",")}`),
-    );
-    if (originKeys.size > 1) {
-      result = true;
-    } else {
-      const hasXrefOrigin = (entry.relations || []).some(
-        (edge) =>
-          edge.type === "xref" &&
-          edge.direction === "outgoing" &&
-          edge.navigable &&
-          isResolvableRelationTarget(edge) &&
-          inflectionPosScopeByLabel[edge.label],
-      );
-      if (entry.entry_kind === "standalone" && hasXrefOrigin) {
-        result = true;
-      }
-    }
-  }
+  const result = evaluateOriginExpansion(entry, hasCachedOrShardEntry);
 
   shouldExpandCache.set(entry, result);
   return result;
+}
+
+export function evaluateOriginExpansion(
+  entry: DictEntry,
+  targetExists: RelationTargetExists,
+): boolean {
+  const sources = collectOriginSources(entry, targetExists);
+  if (sources.length === 0) return false;
+
+  const originKeys = new Set(
+    sources.map((source) => `${source.label}${source.posScope.join(",")}`),
+  );
+  if (originKeys.size > 1) return true;
+
+  const hasXrefOrigin = (entry.relations || []).some((edge) => (
+    edge.type === "xref"
+    && edge.direction === "outgoing"
+    && edge.navigable
+    && targetExists(edge.target)
+    && Boolean(inflectionPosScopeByLabel[edge.label])
+  ));
+  return entry.entry_kind === "standalone" && hasXrefOrigin;
 }
 
 /**

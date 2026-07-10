@@ -263,10 +263,16 @@ test('manifest schema is valid when build artifact manifest exists', () => {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
   assert.equal(typeof manifest.schemaVersion, 'string')
   assert.equal(typeof manifest.dataVersion, 'string')
+  assert.equal(manifest.packType, 'oald')
   assert.equal(typeof manifest.generatedAt, 'string')
   assert.equal(typeof manifest.entryCount, 'number')
   assert.equal(typeof manifest.shardCount, 'number')
-  assert.equal(typeof manifest.danglingNavigableTargets, 'number')
-  assert.equal(typeof manifest.syntheticRelationCount, 'number')
-  assert.ok(Array.isArray(manifest.files))
+  assert.equal(manifest.layout?.shardSubdir, 'dict')
+  assert.equal(manifest.layout?.shardExtension, '.json')
+
+  if (manifest.pipelineVersion) {
+    assert.equal(typeof manifest.danglingNavigableTargets, 'number')
+    assert.equal(typeof manifest.syntheticRelationCount, 'number')
+    assert.ok(Array.isArray(manifest.files))
+  }
 })

@@ -1,4 +1,5 @@
 import { DictEntry, ShardCache } from "./types";
+import { loadPackShard } from "./pack-loader";
 
 /**
  * Shard cache: stores loaded dictionary shards by first character.
@@ -47,17 +48,10 @@ export function loadShard(char: string): ShardCache | null {
   }
 
   try {
-    const data = $file.read(`dict/${char}.json`);
-    if (!data) {
+    const shard = loadPackShard<ShardCache>("oald", char);
+    if (!shard) {
       return null;
     }
-
-    const json = data.toUTF8();
-    if (!json) {
-      return null;
-    }
-
-    const shard = JSON.parse(json) as ShardCache;
 
     for (const [word, entry] of Object.entries(shard)) {
       const lower = word.toLowerCase();
@@ -81,5 +75,6 @@ export function loadShard(char: string): ShardCache | null {
 
 export function getShardForWord(word: string): ShardCache | null {
   const lower = word.toLowerCase();
-  return loadShard(lower[0] || "_");
+  const firstChar = lower[0] || "_";
+  return loadShard(firstChar === "ς" ? "σ" : firstChar);
 }
