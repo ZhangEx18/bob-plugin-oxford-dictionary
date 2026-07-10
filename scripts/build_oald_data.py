@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
 
 def make_context(args: argparse.Namespace) -> BuildContext:
     build_root = resolve_build_root(args.build_root)
-    output_root = resolve_output_root(build_root)
+    output_root = resolve_output_root(build_root) / "packs" / "oald" / "2024.09"
     paths = PipelinePaths(
         build_root=build_root,
         output_root=output_root,
@@ -86,7 +86,7 @@ def main() -> None:
             if args.stage == "extract":
                 return
         if args.stage in {"all", "normalize"}:
-            run_normalize(str(context.mdx_path), store)
+            run_normalize(store)
             if args.stage == "normalize":
                 return
         if args.stage in {"all", "relate"}:

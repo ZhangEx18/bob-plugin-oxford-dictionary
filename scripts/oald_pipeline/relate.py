@@ -18,6 +18,7 @@ def _build_relation_metadata_stream(store: StateStore) -> None:
     parent_rows: list[tuple[str, Any]] = []
     edge_rows: list[tuple[str, Any]] = []
     blocked_rows: list[tuple[str, Any]] = []
+    occupied_parent_labels: set[tuple[str, str]] = set()
 
     for _, entry in store.iter_rows("normalized_entries", chunk_size=CHUNK_SIZE):
         base_word = entry["word"].lower()
@@ -59,6 +60,7 @@ def _build_relation_metadata_stream(store: StateStore) -> None:
                         "_inflection_label": label,
                     },
                 ))
+                occupied_parent_labels.add((form_key, label))
 
         s_forms = exchange_values.get("s", [])
         thirdps_forms = exchange_values.get("3", [])
@@ -91,14 +93,17 @@ def _build_relation_metadata_stream(store: StateStore) -> None:
                             ),
                         },
                     ))
-                    parent_rows.append((
-                        f"{form_key}|{base_word}|{label}",
-                        {
-                            "word": entry["word"],
-                            "label": "原形",
-                            "_inflection_label": label,
-                        },
-                    ))
+                    parent_label_key = (form_key, label)
+                    if parent_label_key not in occupied_parent_labels:
+                        parent_rows.append((
+                            f"{form_key}|{base_word}|{label}",
+                            {
+                                "word": entry["word"],
+                                "label": "原形",
+                                "_inflection_label": label,
+                            },
+                        ))
+                        occupied_parent_labels.add(parent_label_key)
 
         if len(parent_rows) >= CHUNK_SIZE:
             store.upsert_many_chunked("relation_parents", parent_rows, chunk_size=CHUNK_SIZE)
@@ -112,28 +117,13 @@ def _build_relation_metadata_stream(store: StateStore) -> None:
 
     for _, entry in store.iter_rows("normalized_entries", chunk_size=CHUNK_SIZE):
         base_word = entry["word"].lower()
-        pos_keys = core.parse_pos_keys(entry.get("pos", ""))
-        if "n" not in pos_keys:
-            continue
-        exchange_values = core.parse_exchange_values(entry.get("exchange", ""))
-        existing_s = set(f.lower() for f in exchange_values.get("s", []))
-        if existing_s:
-            continue
-        detail_parts = entry.get("translation_detail_parts", [])
-        noun_details = [
-            d for part in detail_parts
-            if part.get("pos") == "n."
-            for d in part.get("details", [])
-        ]
-        if noun_details and all(d.get("countability") == "uncountable" for d in noun_details):
-            continue
-        inferred = core.infer_plural_form(entry["word"])
-        if not inferred or inferred.lower() == base_word:
+        inferred = core.infer_plural_relation_target(entry)
+        if not inferred:
             continue
         inf_key = inferred.lower()
         blocked_payload = store.load_one("blocked_forms", base_word) or []
         blocked = set(blocked_payload)
-        if inf_key in blocked or inf_key in existing_s:
+        if inf_key in blocked:
             continue
         label = core.EXCHANGE_DISPLAY_LABELS.get("s", "复数")
         edge_rows.append((
@@ -151,14 +141,17 @@ def _build_relation_metadata_stream(store: StateStore) -> None:
                 ),
             },
         ))
-        parent_rows.append((
-            f"{inf_key}|{base_word}|{label}",
-            {
-                "word": entry["word"],
-                "label": "原形",
-                "_inflection_label": label,
-            },
-        ))
+        parent_label_key = (inf_key, label)
+        if parent_label_key not in occupied_parent_labels:
+            parent_rows.append((
+                f"{inf_key}|{base_word}|{label}",
+                {
+                    "word": entry["word"],
+                    "label": "原形",
+                    "_inflection_label": label,
+                },
+            ))
+            occupied_parent_labels.add(parent_label_key)
 
         if len(parent_rows) >= CHUNK_SIZE:
             store.upsert_many_chunked("relation_parents", parent_rows, chunk_size=CHUNK_SIZE)
@@ -227,12 +220,14 @@ def run_relate(store: StateStore) -> dict[str, Any]:
     print("Stage C-2 complete")
 
     link_processed = core.process_link_entries(
-        finalized_entries,
-        final_target,
-        parent_relations_map,
-        relation_edges_map,
-        blocked_surface_forms_by_base,
-        lookup,
+        core.LinkProcessingContext(
+            finalized_entries=finalized_entries,
+            final_target=final_target,
+            parent_relations_map=parent_relations_map,
+            relation_edges_map=relation_edges_map,
+            blocked_surface_forms_by_base=blocked_surface_forms_by_base,
+            lookup=lookup,
+        )
     )
     materialized = core.materialize_missing_inflections(finalized_entries)
     metrics = summarize_entries(finalized_entries)

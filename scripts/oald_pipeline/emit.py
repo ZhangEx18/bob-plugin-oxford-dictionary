@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import legacy_impl as legacy
 from .config import DATA_VERSION, PIPELINE_VERSION, SCHEMA_VERSION
 from .models import BuildContext
+from .shard_writer import write_shards
 from .state import StateStore
 
 
@@ -30,6 +30,7 @@ def emit_manifest(context: BuildContext, summary: dict[str, Any]) -> dict[str, A
     manifest = {
         "schemaVersion": SCHEMA_VERSION,
         "dataVersion": DATA_VERSION,
+        "packType": "oald",
         "pipelineVersion": PIPELINE_VERSION,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "entryCount": metrics["entryCount"],
@@ -43,6 +44,10 @@ def emit_manifest(context: BuildContext, summary: dict[str, Any]) -> dict[str, A
         "mdxSha256": compute_sha256(context.mdx_path),
         "buildRoot": str(context.paths.build_root),
         "dictDir": str(context.paths.dict_dir),
+        "layout": {
+            "shardSubdir": "dict",
+            "shardExtension": ".json",
+        },
         "files": [
             {"name": file.name, "sha256": compute_sha256(file), "size": file.stat().st_size}
             for file in dict_files
@@ -63,17 +68,8 @@ def run_emit(context: BuildContext, store: StateStore) -> dict[str, Any]:
         shutil.rmtree(context.paths.dict_dir)
     context.paths.dict_dir.mkdir(parents=True, exist_ok=True)
 
-    previous_output_dir = legacy.OUTPUT_DIR
-    try:
-        legacy.OUTPUT_DIR = str(context.paths.dict_dir)
-        legacy.write_shards(
-            final_entries,
-            summary["totalEntries"],
-            len(store.load_all("normalized_entries")),
-            summary["linkProcessed"],
-        )
-    finally:
-        legacy.OUTPUT_DIR = previous_output_dir
+    print(f"Writing JSON shards to {context.paths.dict_dir}...")
+    write_shards(final_entries, context.paths.dict_dir)
 
     manifest = emit_manifest(context, summary)
     store.upsert_one("meta", "manifest", manifest)

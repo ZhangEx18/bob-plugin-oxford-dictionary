@@ -81,6 +81,23 @@ test('phrasal verbs contain space-separated words', () => {
   }
 })
 
+test('track phrasal verbs stay on the standalone entry only', () => {
+  assert.ok(
+    allEntries.track.phrasal_verbs.some((pv) => pv.name === 'track down'),
+    'track should expose track down as a phrasal verb',
+  )
+
+  for (const word of ['tracks', 'tracked', 'tracking']) {
+    const entry = allEntries[word]
+    assert.ok(entry, `${word} should exist`)
+    assert.notEqual(entry.entry_kind, 'standalone', `${word} should not be the standalone track entry`)
+    assert.ok(
+      !Array.isArray(entry.phrasal_verbs) || entry.phrasal_verbs.length === 0,
+      `${word} should not carry track phrasal verbs`,
+    )
+  }
+})
+
 // ---------------------------------------------------------------------------
 // Compound words and hyphenated forms
 // ---------------------------------------------------------------------------

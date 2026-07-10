@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .shard_writer import shard_key_for_word
+
 
 def summarize_entries(entries: dict[str, dict[str, Any]]) -> dict[str, Any]:
     counts = {"standalone": 0, "inflection": 0, "alias": 0}
@@ -25,7 +27,7 @@ def summarize_entries(entries: dict[str, dict[str, Any]]) -> dict[str, Any]:
             if relation.get("navigable") and relation.get("target", "").lower() not in entries:
                 dangling_targets += 1
 
-    shard_chars = sorted({key[0].lower() if key else "_" for key in entries.keys()})
+    shard_chars = sorted({shard_key_for_word(key) for key in entries.keys()})
     return {
         "entryCount": len(entries),
         "counts": counts,
@@ -36,4 +38,3 @@ def summarize_entries(entries: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "shardCount": len(shard_chars),
         "shards": shard_chars,
     }
-

@@ -5,11 +5,9 @@ Reads ECDICT data (SQLite preferred, CSV fallback), filters to entries
 with Chinese translations, strips unnecessary fields, and emits
 character-keyed JSON shards to the build output directory.
 
-IMPORTANT: ECDICT data is distributed SEPARATELY from the .bobplugin package.
-The build output shards are NOT bundled into the plugin archive. Users who
-want the offline ECDICT fallback must download/place the shard files into the
-installed plugin's data directory manually. The plugin probes ecdict/a.json
-at runtime and enables the fallback layer only if data is present.
+ECDICT data is distributed separately from the .bobplugin package. Runtime
+loading requires the generated manifest and shards at
+packs/ecdict/latest/manifest.json and packs/ecdict/latest/dict/*.json.
 
 Usage:
     python3 scripts/build_ecdict_data.py
@@ -18,17 +16,12 @@ Usage:
     python3 scripts/build_ecdict_data.py --output /custom/output/dir
 
 Output directory structure:
-    .cache/oald-build/output/ecdict/
-        a.json  - all ECDICT entries starting with 'a'
-        b.json  - all ECDICT entries starting with 'b'
-        ...
-        z.json
-        _.json  - entries starting with non-letter characters
-
-After building, the ecdict/ directory must be placed inside the installed
-plugin's data directory so that $file.read("ecdict/a.json") resolves at
-runtime. In Bob, this is typically:
-    ~/Library/Application Support/Bob/plugins/com.oald.dictionary/ecdict/
+    .cache/oald-build/output/packs/ecdict/latest/
+        manifest.json
+        dict/
+            a.json
+            ...
+            _.json
 
 Each shard is a flat JSON object: { "word": { word, phonetic, translation, pos, exchange }, ... }
 
@@ -50,6 +43,7 @@ import os
 import sqlite3
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_BUILD_ROOT = os.environ.get(
@@ -62,7 +56,7 @@ DEFAULT_OUTPUT_ROOT = os.environ.get(
 )
 DEFAULT_ECDICT_DIR = os.environ.get(
     "OALD_ECDICT_DIR",
-    os.path.join(DEFAULT_OUTPUT_ROOT, "ecdict"),
+    os.path.join(DEFAULT_OUTPUT_ROOT, "packs", "ecdict", "latest", "dict"),
 )
 
 KEEP_FIELDS = {"word", "phonetic", "translation", "pos", "exchange"}
@@ -154,6 +148,28 @@ def write_shards(shards, output_dir):
         print(f"  {char}.json: {len(data)} entries")
 
 
+def write_manifest(shards, output_dir):
+    pack_root = os.path.dirname(output_dir)
+    manifest = {
+        "schemaVersion": "1.0.0",
+        "dataVersion": "latest",
+        "packType": "ecdict",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "entryCount": sum(len(s) for s in shards.values()),
+        "shardCount": len(shards),
+        "layout": {
+            "shardSubdir": "dict",
+            "shardExtension": ".json",
+        },
+        "files": [
+            {"name": f"{char}.json"}
+            for char in sorted(shards.keys())
+        ],
+    }
+    with open(os.path.join(pack_root, "manifest.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Build ECDICT shard data for the OALD Bob plugin"
@@ -209,6 +225,7 @@ def main():
 
     print(f"\nWriting shards to {args.output}")
     write_shards(shards, args.output)
+    write_manifest(shards, args.output)
 
     total = sum(len(s) for s in shards.values())
     print(f"\nTotal entries written: {total}")

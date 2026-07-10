@@ -3,7 +3,8 @@ const path = require('node:path')
 const vm = require('node:vm')
 const esbuild = require('esbuild')
 
-const ENTRY_TS_PATH = path.join(__dirname, '..', 'src', 'index.ts')
+const WORKSPACE_ROOT = path.join(__dirname, '..')
+const ENTRY_TS_PATH = path.join(WORKSPACE_ROOT, 'apps', 'bob-plugin', 'src', 'index.ts')
 
 let cachedRuntime = null
 
@@ -14,7 +15,24 @@ function createFileBridge(overrides = {}) {
       if (override != null) {
         return { toUTF8() { return override } }
       }
-      const fullPath = path.join(__dirname, '..', relativePath)
+      if (relativePath === 'packs/oald/2024.09/manifest.json') {
+        return { toUTF8() { return JSON.stringify({
+          schemaVersion: '1.0.0',
+          dataVersion: 'test',
+          packType: 'oald',
+          shardCount: 1,
+          entryCount: 1,
+          layout: { shardSubdir: 'dict', shardExtension: '.json' },
+        }) } }
+      }
+      if (relativePath.startsWith('packs/oald/2024.09/dict/')) {
+        const fallbackPath = relativePath.replace('packs/oald/2024.09/', '')
+        const fullFallbackPath = path.join(WORKSPACE_ROOT, fallbackPath)
+        if (fs.existsSync(fullFallbackPath)) {
+          return { toUTF8() { return fs.readFileSync(fullFallbackPath, 'utf8') } }
+        }
+      }
+      const fullPath = path.join(WORKSPACE_ROOT, relativePath)
       if (!fs.existsSync(fullPath)) return null
       return { toUTF8() { return fs.readFileSync(fullPath, 'utf8') } }
     },
@@ -91,7 +109,7 @@ async function loadRuntime(overrides = {}) {
 async function runTranslate(word, options = {}) {
   // Compatibility: translate-runtime.test.js passes overrides directly;
   // edge-cases.test.js passes { detectFrom, overrides }
-  const isDirectOverrides = options != null && Object.keys(options).some((k) => k.startsWith('dict/') || k === '$httpMocks')
+  const isDirectOverrides = options != null && Object.keys(options).some((k) => k.startsWith('dict/') || k.startsWith('packs/') || k === 'manifest.json' || k.startsWith('packs/oald/') || k === '$httpMocks')
   const detectFrom = isDirectOverrides ? 'en' : (options?.detectFrom || 'en')
   const detectTo = isDirectOverrides ? 'zh-Hans' : (options?.detectTo || 'zh-Hans')
   const overrides = isDirectOverrides ? options : (options?.overrides || {})

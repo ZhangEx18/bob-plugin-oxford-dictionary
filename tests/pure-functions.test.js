@@ -216,25 +216,27 @@ test("getBackRelation returns null when no origin relation", async () => {
   assert.equal(result, null);
 });
 
-test("getChildRelations extracts navigable inflection relations", async () => {
+const allTargetsExist = () => true;
+
+test("navigable inflection relations retain word and label", async () => {
   const relations = await loadModule("relations.ts");
-  const result = relations.getChildRelations(fixtures.standaloneGo);
+  const result = relations.collectChildRelations(fixtures.standaloneGo, allTargetsExist);
 
   assert.ok(result.length > 0);
   assert.ok(result.some((r) => r.word === "went" && r.label === "过去式"));
 });
 
-test("getCrossReferences extracts navigable xref relations", async () => {
+test("navigable cross-references retain their target", async () => {
   const relations = await loadModule("relations.ts");
-  const result = relations.getCrossReferences(fixtures.standaloneFound);
+  const result = relations.collectCrossReferences(fixtures.standaloneFound, allTargetsExist);
 
   assert.ok(result.length > 0);
   assert.ok(result.some((r) => r.word === "find"));
 });
 
-test("getOriginSources collects origin and xref relations with pos scope", async () => {
+test("origin and xref sources retain their POS scope", async () => {
   const relations = await loadModule("relations.ts");
-  const result = relations.getOriginSources(fixtures.standaloneFound);
+  const result = relations.collectOriginSources(fixtures.standaloneFound, allTargetsExist);
 
   assert.ok(result.length > 0);
   const findSource = result.find((s) => s.word === "find");
@@ -242,25 +244,25 @@ test("getOriginSources collects origin and xref relations with pos scope", async
   arrayEqual(findSource.posScope, ["v"]);
 });
 
-test("getOriginSources deduplicates by word:label key", async () => {
+test("duplicate origin sources collapse by word and label", async () => {
   const relations = await loadModule("relations.ts");
-  const result = relations.getOriginSources(fixtures.multiOriginLeaves);
+  const result = relations.collectOriginSources(fixtures.multiOriginLeaves, allTargetsExist);
 
   assert.equal(result.length, 2);
   assert.ok(result.some((s) => s.word === "leaf"));
   assert.ok(result.some((s) => s.word === "leave"));
 });
 
-test("shouldExpandOriginSources returns true for multiple distinct origins", async () => {
+test("multiple distinct origins expand the source section", async () => {
   const relations = await loadModule("relations.ts");
-  const result = relations.shouldExpandOriginSources(fixtures.multiOriginLeaves);
+  const result = relations.evaluateOriginExpansion(fixtures.multiOriginLeaves, allTargetsExist);
 
   assert.equal(result, true);
 });
 
-test("shouldExpandOriginSources returns false for single origin", async () => {
+test("a single origin keeps the source section collapsed", async () => {
   const relations = await loadModule("relations.ts");
-  const result = relations.shouldExpandOriginSources(fixtures.inflectionWent);
+  const result = relations.evaluateOriginExpansion(fixtures.inflectionWent, allTargetsExist);
 
   assert.equal(result, false);
 });

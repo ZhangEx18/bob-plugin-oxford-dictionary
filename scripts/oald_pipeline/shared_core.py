@@ -19,13 +19,10 @@ Constraints:
 - long-term goal is to shrink this file until only truly shared helpers remain
 """
 
-import json
 import re
-import os
 from pathlib import Path
 from typing import Any
 from bs4 import BeautifulSoup
-from readmdict import MDX
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OALD_ROOT = PROJECT_ROOT / "vendor" / "oald" / "OALD 2024.09"
@@ -1475,8 +1472,16 @@ def filter_entry_pos_and_translation(entry: dict[str, Any], relation_label: str)
     return result
 
 
+def copy_without_phrasal_verbs(entry: dict[str, Any]) -> dict[str, Any]:
+    result = dict(entry)
+    result.pop("phrasal_verbs", None)
+    return result
+
+
 def create_inflection_entry(form: str, parent_entry: dict[str, Any], relation_label: str) -> dict[str, Any]:
-    entry = filter_entry_pos_and_translation(parent_entry, relation_label)
+    entry = copy_without_phrasal_verbs(
+        filter_entry_pos_and_translation(parent_entry, relation_label)
+    )
     entry["word"] = form
     entry["linked_word"] = parent_entry["word"]
 
@@ -1580,5 +1585,3 @@ def build_pos_freq(pos_data: dict[str, list[str]]) -> str:
             pct = round(len(meanings) / total * 100)
             parts.append(f"{pos_norm}:{pct}")
     return "/".join(parts)
-
-
