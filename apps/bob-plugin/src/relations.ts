@@ -1,4 +1,4 @@
-import { DictEntry, WordRelation, OriginSource, RelationEdge, WordFamilyItem } from "./types";
+import { DictEntry, WordRelation, OriginSource, RelationEdge, ShardCache, WordFamilyItem } from "./types";
 import { getShardForWord, hasCachedOrShardEntry } from "./data-loader";
 
 /**
@@ -420,28 +420,48 @@ export function getWordFamily(entry: DictEntry): WordFamilyItem[] {
 }
 
 /**
- * Searches the shard containing the target word for a word-family that
- * includes it.
+ * Per-shard member -> word-family index.
  *
- * When an entry does not have its own `word_family` array, this function
- * iterates over every entry in the same shard looking for another entry
- * whose word-family list contains the target word. This is an O(n) scan
- * where n is the number of entries in the shard.
+ * Shards hold up to ~1M entries, so scanning one on every word-family miss is
+ * far too slow to repeat. The index is built once per shard on first use and
+ * keyed by the shard object, which `data-loader.ts` keeps stable for the
+ * lifetime of the session.
+ */
+const wordFamilyIndexCache = new WeakMap<ShardCache, Map<string, WordFamilyItem[]>>();
+
+function getWordFamilyIndex(shard: ShardCache): Map<string, WordFamilyItem[]> {
+  const cached = wordFamilyIndexCache.get(shard);
+  if (cached) return cached;
+
+  const index = new Map<string, WordFamilyItem[]>();
+  for (const entry of Object.values(shard)) {
+    const family = entry.word_family || [];
+    for (const item of family) {
+      if (!item.word) continue;
+      const key = item.word.toLowerCase();
+      if (!index.has(key)) {
+        index.set(key, family);
+      }
+    }
+  }
+
+  wordFamilyIndexCache.set(shard, index);
+  return index;
+}
+
+/**
+ * Looks up the word-family that includes the target word.
+ *
+ * When an entry does not have its own `word_family` array, another entry in the
+ * same shard may list it. The per-shard index keeps that lookup O(1) after the
+ * first miss; the previous implementation rescanned the whole shard every time.
+ * Insertion order is preserved so the first matching family still wins.
  *
  * @param word - target word to search for within word families
  * @returns the first matching word-family array, or empty if none found
  */
 function findWordFamilyContaining(word: string): WordFamilyItem[] {
   const shard = getShardForWord(word);
-  const lower = word.toLowerCase();
   if (!shard) return [];
-
-  for (const entry of Object.values(shard)) {
-    const family = entry.word_family || [];
-    if (family.some((item) => item.word.toLowerCase() === lower)) {
-      return family;
-    }
-  }
-
-  return [];
+  return getWordFamilyIndex(shard).get(word.toLowerCase()) || [];
 }

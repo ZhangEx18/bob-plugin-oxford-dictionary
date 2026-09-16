@@ -23,6 +23,13 @@ const shardCache: Map<string, ShardCache> = new Map();
 const MAX_ENTRY_CACHE_SIZE = 60000;
 const entryCache: Map<string, DictEntry> = new Map();
 
+/**
+ * Once the cap is reached, later shards load without joining the shared pool.
+ * That silently degrades `relations.ts`, whose WeakMap caches depend on object
+ * identity, so report it once instead of letting the slowdown stay invisible.
+ */
+let entryCacheCapWarned = false;
+
 export function getCachedEntry(word: string): DictEntry | undefined {
   return entryCache.get(word.toLowerCase());
 }
@@ -59,6 +66,13 @@ export function loadShard(char: string): ShardCache | null {
         console.warn(`[data-loader] Duplicate entry for "${word}" across shards`);
       } else if (entryCache.size < MAX_ENTRY_CACHE_SIZE) {
         entryCache.set(lower, entry);
+      } else if (!entryCacheCapWarned) {
+        entryCacheCapWarned = true;
+        console.warn(
+          `[data-loader] Entry cache reached its ${MAX_ENTRY_CACHE_SIZE} cap; later shards `
+          + "load without joining the shared pool, so identity-based relation caches will "
+          + "hit less often for the rest of this session.",
+        );
       }
     }
 
