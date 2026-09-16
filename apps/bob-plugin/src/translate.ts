@@ -23,17 +23,21 @@ function queryYoudaoWord(
     .then((dictionaryResult) => {
       if (dictionaryResult) {
         completion({ result: dictionaryResult });
-        return null;
+        return;
       }
-      return queryYoudaoTranslation(text, sourceLang, targetLang);
-    })
-    .then((translationResult) => {
-      if (translationResult === null) return;
-      if (translationResult) {
-        completion({ result: translationResult });
-      } else {
-        completeError(completion, "notFound", "");
-      }
+      // Nested instead of returned: a null translation result means "no result",
+      // which must still complete the request. Chaining it out and testing for
+      // null made "dictionary empty + translation failed" indistinguishable from
+      // "dictionary already answered", so completion was never called and Bob
+      // waited forever.
+      return queryYoudaoTranslation(text, sourceLang, targetLang)
+        .then((translationResult) => {
+          if (translationResult) {
+            completion({ result: translationResult });
+          } else {
+            completeError(completion, "notFound", "");
+          }
+        });
     })
     .catch((error) => completeError(completion, "network", String(error)));
 }
@@ -55,6 +59,17 @@ function queryGeneralTranslation(
     .catch((error) => completeError(completion, "network", String(error)));
 }
 
+/**
+ * The offline OALD pack, the ECDICT supplement and the Youdao dictionary card
+ * all contain English -> Simplified Chinese content only, and each of them
+ * reports `to: "zh-Hans"`. Serving one of them for a non-Chinese target would
+ * hand the user Chinese text labelled as the language they asked for, so those
+ * layers are only eligible when the requested target is Chinese.
+ */
+function isChineseTarget(lang: string): boolean {
+  return lang.startsWith("zh");
+}
+
 export function translate(query: Bob.TranslateQuery, completion: Bob.Completion): void {
   if (!query || typeof query.text !== "string") {
     completeError(completion, "unsupportLanguage", "Invalid query");
@@ -69,7 +84,11 @@ export function translate(query: Bob.TranslateQuery, completion: Bob.Completion)
 
   const targetLang = query.detectTo || "zh-Hans";
   const sourceLang = query.detectFrom || "auto";
-  if ((sourceLang === "en" || sourceLang === "auto") && isWordQuery(text)) {
+  if (
+    isChineseTarget(targetLang)
+    && (sourceLang === "en" || sourceLang === "auto")
+    && isWordQuery(text)
+  ) {
     const oaldView = buildEntryView(text);
     if (oaldView) {
       completion({ result: buildOaldResult(oaldView) });
