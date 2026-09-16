@@ -99,7 +99,7 @@ async function loadRuntime(overrides = {}) {
     JSON,
   }
 
-    vm.runInNewContext(`${source}\nmodule.exports = { translate, supportLanguages, __relationsForTests: typeof __relationsForTests !== 'undefined' ? __relationsForTests : null, __dataLoaderForTests: typeof __dataLoaderForTests !== 'undefined' ? __dataLoaderForTests : null };`, context, {
+    vm.runInNewContext(`${source}\nmodule.exports = { translate, supportLanguages, __relationsForTests: typeof __relationsForTests !== 'undefined' ? __relationsForTests : null, __dataLoaderForTests: typeof __dataLoaderForTests !== 'undefined' ? __dataLoaderForTests : null, __querySurfaceForTests: typeof __querySurfaceForTests !== 'undefined' ? __querySurfaceForTests : null };`, context, {
     filename: ENTRY_TS_PATH,
   })
 
