@@ -97,6 +97,9 @@ python3 -m venv .venv
 - 测试使用 Node.js 内置 `node:test`。
 - 重点测试通常在 `tests/schema-contract.test.js`、`tests/invariants.test.js`、`tests/translate-runtime.test.js` 和 `tests/pure-functions.test.js`。
 - 如果要验证某个回归，优先跑最小相关测试文件，而不是整套测试。
+- `npm run test:ci` 只跑可离线执行的子集（`artifact-paths`、`cgel-irregular-verbs`、`pure-functions`、`release-appcast`、`release-validation`），CI 使用这一组。
+- 其余测试有本地依赖，不能放进 CI：`schema-contract`、`invariants`、`translate-runtime`、`edge-cases`、`open-family`、`sampling`、`abbreviation-phrasal` 需要可读的 OALD 词库数据；`oald-pipeline-*` 需要 `./.venv/bin/python`。
+- `tests/_runtime.js` 会把 `packs/oald/2024.09/dict/*.json` 回退到工作区的 `dict/`，所以凡是走 `runTranslate` 的测试都会依赖词库数据，即便它没有显式引用 `dict-path`。
 
 ## 环境变量
 
