@@ -685,6 +685,24 @@ test('normalization aliases link to their canonical spelling', async () => {
   }
 })
 
+test('alias whose display_word is itself still resolves through linked_word', async () => {
+  // 2,359 aliases store their own word in display_word: a-lines declares
+  // display_word "a-lines" while linked_word is "a-line". That self-reference
+  // was harmless while aliases shipped a copy of their target's payload, so it
+  // went unnoticed; with pointer-only aliases it resolved the entry to itself
+  // and rendered nothing.
+  for (const [word, target] of [['a-lines', 'a-line'], ['a-lists', 'a-list'], ['aaas', 'aaa']]) {
+    const result = await runTranslate(word)
+    assert.equal(result.raw.provider, 'oald', `${word} should resolve offline`)
+    assert.equal(result.raw.displayWord, target, `${word} should redirect to ${target}`)
+    assert.ok(result.toDict.parts.length > 0, `${word} should render the target definition`)
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(result.toDict.exchanges)),
+      [{ name: '原形', words: [target] }],
+    )
+  }
+})
+
 test('alias resolution does not depend on which shards loaded earlier', async () => {
   // Regression: display resolution read a global entry pool instead of loading
   // the target's shard, so the answer depended on session history. a-man's
