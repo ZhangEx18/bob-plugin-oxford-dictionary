@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { runTranslate } = require('./_runtime')
+const { runTranslate, loadRuntime } = require('./_runtime')
 
 // ---------------------------------------------------------------------------
 // Youdao regression safety net.
@@ -138,6 +138,80 @@ test('contraction-shaped token missing from the dictionary still reaches Youdao'
   assert.equal(result.raw.provider, 'youdao-translate')
   assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), ['兜底译文'])
   assert.equal(dictMock.calls.length, 1, 'dictionary route must still be tried first')
+})
+
+// The live endpoint reports a successful call with the string "0" but the
+// rate-limit code as the number 411. Both spellings are exercised so a fix that
+// only handles one of them cannot pass, which is how the first version of this
+// retry shipped broken while its test was green.
+const RATE_LIMITED_RESPONSES = [
+  { label: 'number', body: { errorCode: 411, msg: '请求频率过快' } },
+  { label: 'string', body: { errorCode: '411', msg: '请求频率过快' } },
+]
+
+for (const { label, body } of RATE_LIMITED_RESPONSES) {
+  test(`a refused request (errorCode as ${label}) is sent once more`, async () => {
+    const calls = []
+    let refusedOnce = false
+    const mock = {
+      method: 'POST',
+      url: YOUDAO_TRANS_URL,
+      response() {
+        calls.push(calls.length)
+        if (!refusedOnce) {
+          refusedOnce = true
+          return body
+        }
+        return okTranslation('重试后成功')
+      },
+    }
+
+    const result = await query('hello world', [mock])
+    assert.equal(result.raw.provider, 'youdao-translate')
+    assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), ['重试后成功'])
+    assert.equal(calls.length, 2, 'the refused request must be sent again')
+  })
+}
+
+test('a refused request waits a full window before retrying', async () => {
+  const mock = recordingMock(YOUDAO_TRANS_URL, () => ({ errorCode: 411 }))
+  const runtime = await loadRuntime({ $httpMocks: [mock] })
+
+  await new Promise((resolve) => {
+    runtime.translate({ text: 'hello world', detectFrom: 'en', detectTo: 'zh-Hans' }, resolve)
+  })
+
+  // One wait for the refusal window; retrying sooner only burns quota, because
+  // a refused request still counts against the budget.
+  assert.ok(
+    runtime.__pendingTimers.includes(30),
+    `expected a 30s wait, got ${JSON.stringify(runtime.__pendingTimers)}`,
+  )
+  assert.equal(mock.calls.length, 2, 'one retry, not an unbounded loop')
+})
+
+test('long text paces its requests instead of exhausting the endpoint budget', async () => {
+  // The endpoint serves six requests then refuses for ~30s, and a single
+  // request is capped near 1,000 characters, so segments past the sixth must
+  // wait. Without pacing a ~10k character text failed outright.
+  const text = 'The quick brown fox jumps over the lazy dog. '.repeat(240).trim()
+  const mock = recordingMock(YOUDAO_TRANS_URL, (_options, index) => okTranslation(`第${index + 1}段`))
+  const runtime = await loadRuntime({ $httpMocks: [mock] })
+
+  const result = await new Promise((resolve) => {
+    runtime.translate({ text, detectFrom: 'en', detectTo: 'zh-Hans' }, resolve)
+  })
+
+  assert.equal(result.error, undefined, `expected success, got ${JSON.stringify(result.error)}`)
+  assert.ok(mock.calls.length > 6, `expected more than 6 segments, got ${mock.calls.length}`)
+  assert.ok(
+    runtime.__pendingTimers.length > 0,
+    'requests past the burst budget must wait for a slot',
+  )
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(result.result.toParagraphs)),
+    mock.calls.map((_call, index) => `第${index + 1}段`),
+  )
 })
 
 test('transport failure surfaces as network, not notFound', async () => {

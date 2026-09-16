@@ -87,9 +87,23 @@ async function loadRuntime(overrides = {}) {
   }
 
   const source = cachedRuntime
+  const pendingTimers = []
   const context = {
     $file: createFileBridge(overrides),
     $http: createHttpBridge(overrides.$httpMocks || []),
+    // Bob's $timer is the only delay primitive (its runtime is JavaScriptCore,
+    // so there is no setTimeout). Tests record the requested intervals instead
+    // of waiting, and fire non-repeating handlers immediately.
+    $timer: {
+      schedule(options) {
+        pendingTimers.push(options.interval)
+        if (options.repeats !== true && typeof options.handler === 'function') {
+          options.handler()
+        }
+        return pendingTimers.length
+      },
+      invalidate() {},
+    },
     module: { exports: {} },
     exports: {},
     require,
@@ -99,10 +113,12 @@ async function loadRuntime(overrides = {}) {
     JSON,
   }
 
-    vm.runInNewContext(`${source}\nmodule.exports = { translate, supportLanguages, __relationsForTests: typeof __relationsForTests !== 'undefined' ? __relationsForTests : null, __dataLoaderForTests: typeof __dataLoaderForTests !== 'undefined' ? __dataLoaderForTests : null, __querySurfaceForTests: typeof __querySurfaceForTests !== 'undefined' ? __querySurfaceForTests : null };`, context, {
+    vm.runInNewContext(`${source}\nmodule.exports = { translate, supportLanguages, pluginTimeoutInterval: typeof pluginTimeoutInterval !== 'undefined' ? pluginTimeoutInterval : null, __relationsForTests: typeof __relationsForTests !== 'undefined' ? __relationsForTests : null, __dataLoaderForTests: typeof __dataLoaderForTests !== 'undefined' ? __dataLoaderForTests : null, __querySurfaceForTests: typeof __querySurfaceForTests !== 'undefined' ? __querySurfaceForTests : null };`, context, {
     filename: ENTRY_TS_PATH,
   })
 
+  // Exposed so tests can assert backoff behaviour without actually waiting.
+  context.module.exports.__pendingTimers = pendingTimers
   return context.module.exports
 }
 

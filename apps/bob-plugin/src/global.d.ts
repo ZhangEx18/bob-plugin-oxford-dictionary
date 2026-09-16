@@ -81,6 +81,21 @@ declare const $file: {
   read(path: string): { toUTF8(): string } | null;
 };
 
+/**
+ * Bob 插件定时器 API.
+ *
+ * `interval` is in whole seconds, which is the only delay primitive available:
+ * the runtime is JavaScriptCore, so there is no setTimeout.
+ */
+declare const $timer: {
+  schedule(options: {
+    interval: number;
+    repeats: boolean;
+    handler: () => void;
+  }): number;
+  invalidate(timerId: number): void;
+};
+
 /** Bob 插件 HTTP 请求 API */
 declare const $http: {
   request(options: {
@@ -88,6 +103,8 @@ declare const $http: {
     url: string;
     header?: Record<string, string>;
     body?: Record<string, string>;
+    /** Bob 1.8.0+: pass query.cancelSignal through to abort the request. */
+    cancelSignal?: unknown;
     handler: (resp: {
       data: { toString(): string };
       error?: { code?: string; localizedDescription?: string };
