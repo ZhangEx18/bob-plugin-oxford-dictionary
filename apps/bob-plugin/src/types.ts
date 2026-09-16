@@ -40,11 +40,17 @@ export interface TranslationDetailPart {
  */
 export interface DictEntry {
   word: string;
-  phonetic: string;
-  phonetic_us: string;
-  translation: string;
-  pos: string;
-  exchange: string;
+  /**
+   * Content fields are optional because alias entries are pure redirects: they
+   * carry only the pointer (`linked_word` / `display_word`) and no payload, so
+   * readers must tolerate their absence. Standalone and inflection entries are
+   * expected to carry them.
+   */
+  phonetic?: string;
+  phonetic_us?: string;
+  translation?: string;
+  pos?: string;
+  exchange?: string;
   translation_parts?: TranslationPart[];
   translation_detail_parts?: TranslationDetailPart[];
   phrasal_verbs?: PhrasalVerb[];

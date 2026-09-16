@@ -47,6 +47,22 @@ const wordFamilyCache = new WeakMap<DictEntry, WordFamilyItem[]>();
 
 export type RelationTargetExists = (word: string) => boolean;
 
+/**
+ * The word an entry redirects to, or the entry's own word when it is not a
+ * redirect.
+ *
+ * `display_word` is preferred, but 2,359 aliases store their own word there
+ * (a-lines declares display_word "a-lines" while linked_word is "a-line"). That
+ * self-reference was harmless while aliases shipped a copy of their target's
+ * payload, but a pointer-only alias would resolve to itself and render nothing.
+ */
+export function resolveTargetWord(entry: DictEntry): string {
+  const self = entry.word.toLowerCase();
+  const candidates = [entry.display_word, entry.linked_word];
+  const target = candidates.find((candidate) => candidate && candidate.toLowerCase() !== self);
+  return target || entry.word;
+}
+
 /** 将关系边转换为简化词关系（用于 UI 展示） */
 function relationEdgeToWordRelation(edge: RelationEdge): WordRelation {
   return {
@@ -106,8 +122,8 @@ export function getBackRelation(entry: DictEntry): WordRelation | null {
   // invariant). Their redirect target lives on display_word / linked_word
   // instead, so surface it as the canonical form. Without this an alias page
   // showed its definition with no indication of which entry it belongs to.
-  const linkedTarget = entry.display_word || entry.linked_word;
-  if (linkedTarget && linkedTarget.toLowerCase() !== entry.word.toLowerCase()) {
+  const linkedTarget = resolveTargetWord(entry);
+  if (linkedTarget.toLowerCase() !== entry.word.toLowerCase()) {
     const result = { word: linkedTarget, label: "原形" };
     backRelationCache.set(entry, result);
     return result;

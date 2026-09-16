@@ -1,11 +1,11 @@
 import { getShardForWord } from "./data-loader";
-import { getBackRelation, getChildRelations, shouldExpandOriginSources } from "./relations";
+import { getBackRelation, getChildRelations, resolveTargetWord, shouldExpandOriginSources } from "./relations";
 import { DictEntry, EntryView, WordRelation } from "./types";
 
 function resolveDisplayEntry(
   exactEntry: DictEntry,
 ): { displayEntry: DictEntry; isFallbackDisplay: boolean } {
-  const displayWord = exactEntry.display_word || exactEntry.linked_word || exactEntry.word;
+  const displayWord = resolveTargetWord(exactEntry);
   // Resolve through getShardForWord so the target's shard is loaded on demand.
   // Reading it out of a global pool instead made the outcome depend on which
   // shards happened to be loaded already: the same query returned the alias's
@@ -39,6 +39,18 @@ function resolveChildRelations(
     });
 }
 
+/**
+ * Whether the resolved entry actually carries anything to render.
+ *
+ * Alias entries are pure redirects, so an alias whose target could not be
+ * loaded has no payload of its own. Reporting a miss lets the caller fall
+ * through to ECDICT / Youdao rather than showing an empty dictionary card.
+ */
+function hasRenderableContent(entry: DictEntry): boolean {
+  if (typeof entry.translation === "string" && entry.translation.trim() !== "") return true;
+  return Array.isArray(entry.translation_parts) && entry.translation_parts.length > 0;
+}
+
 export function buildEntryView(queryWord: string): EntryView | null {
   const normalizedWord = queryWord.toLowerCase();
   const shard = getShardForWord(normalizedWord);
@@ -46,9 +58,10 @@ export function buildEntryView(queryWord: string): EntryView | null {
   if (!shard || !exactEntry) return null;
 
   const { displayEntry, isFallbackDisplay } = resolveDisplayEntry(exactEntry);
+  if (!hasRenderableContent(displayEntry)) return null;
   return {
     queryWord: normalizedWord,
-    displayWord: exactEntry.display_word || exactEntry.linked_word || exactEntry.word,
+    displayWord: resolveTargetWord(exactEntry),
     entry: displayEntry,
     exactEntry,
     isFallbackDisplay,
