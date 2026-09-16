@@ -1,5 +1,5 @@
 import * as Bob from "@bob-plug/core";
-import { getCachedEntry, getShardForWord } from "./data-loader";
+import { getShardForWord } from "./data-loader";
 import {
   buildGroupedSourceParts,
   extractPosScopesFromPart,
@@ -23,8 +23,7 @@ function collectSourceEntries(entry: DictEntry): Map<string, DictEntry> {
   const sourceEntries = new Map<string, DictEntry>();
   for (const source of getOriginSources(entry)) {
     const sourceKey = source.word.toLowerCase();
-    const sourceEntry = getShardForWord(source.word)?.[sourceKey]
-      || getCachedEntry(source.word);
+    const sourceEntry = getShardForWord(source.word)?.[sourceKey];
     if (sourceEntry) sourceEntries.set(sourceKey, sourceEntry);
   }
   return sourceEntries;
