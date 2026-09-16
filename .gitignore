@@ -12,8 +12,5 @@ dict/
 data/build/
 data/packs/
 data/sources/
-# Orphaned roots/affix table: its only consumer (build_roots_csv_pack.py) was removed
-# in 8.4.3. Kept ignored rather than deleted because the file was never tracked.
-/1.enriched.csv
 vendor/oald/OALD 2024.09/stardict.db
 vendor/oald/OALD 2024.09/**/.DS_Store
