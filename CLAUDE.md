@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 核心运行时是”英文单词优先查离线 OALD，缺词再试 ECDICT，最后回退到有道词典/翻译；非英文或长文本直接走有道翻译”。
 
-词根词缀数据由 `scripts/build_roots_data.py` 从多个数据源生成并打包，但 8.4.2 不在 Bob 查询结果中展示 roots 区块。
+自 8.4.3 起项目不再包含词根词缀（roots）功能：它从未在查询结果中渲染，运行时、打包、发布门禁和生成脚本中的相关代码均已移除。
 
 ## 常用命令
 
@@ -23,7 +23,6 @@ npm run build
 npm run dev
 npm run build:release
 npm run build:dict
-npm run build:roots
 npm run build:ecdict
 python3 -m venv .venv
 ./.venv/bin/pip install -r env/requirements-oald.txt
@@ -32,9 +31,8 @@ python3 -m venv .venv
 补充说明：
 - `npm run lint` 只是 `tsc --noEmit`。
 - `npm run build` 是一次性构建；`npm run dev` 才会持续监听。
-- `npm run build:release` 会严格校验 OALD/roots manifest 与 shards，再把成品写到 `release/` 并复核包内版本和 `track down` 行为。
+- `npm run build:release` 会严格校验 OALD manifest 与 shards，再把成品写到 `release/` 并复核包内版本和 `track down` 行为。
 - `npm run build:dict` 默认读取私有的 `data/sources/oald/private/OALD 2024.09/oaldpe.mdx`，也可用 `OALD_MDX_PATH` 覆盖。
-- `npm run build:roots` 调用 `scripts/build_roots_data.py` 生成词根词缀数据。
 - 完整运行时测试需要可读 OALD 数据包；兼容期也可读取旧 `.cache` 或 `dict/`。
 
 ## 架构概览
@@ -49,12 +47,12 @@ python3 -m venv .venv
 
 ### OALD 数据层
 
-- `apps/bob-plugin/src/pack-loader.ts` 先校验 manifest，再按首字母加载 OALD、ECDICT 和 roots shards。
+- `apps/bob-plugin/src/pack-loader.ts` 先校验 manifest，再按首字母加载 OALD 和 ECDICT shards。
 - `DictEntry` 加载后按不可变对象使用，`apps/bob-plugin/src/relations.ts` 里的多个 `WeakMap` 缓存依赖对象身份一致性，所以同一个词必须尽量复用同一实例。
 - `apps/bob-plugin/src/relations.ts` 负责 origin / inflection / xref / word family 的关系解析，并过滤掉无法在运行时导航到的目标。
 - `apps/bob-plugin/src/morphology.ts` 合并 `verb_forms`、`exchange` 字符串和关系边，输出 Bob 需要的词形变化区块。
 - `apps/bob-plugin/src/formatter.ts` 负责把结构化释义和来源词条整理成 Bob 的 `parts`、`relatedWordParts` 和细分展示格式。
-- `apps/bob-plugin/src/roots-loader.ts` 保留数据加载能力但当前没有 UI 消费方；`ecdict-loader.ts` 是可选外部补词层。
+- `apps/bob-plugin/src/ecdict-loader.ts` 是可选外部补词层。
 
 ### 查询结果组装
 
@@ -71,26 +69,15 @@ python3 -m venv .venv
 ### 构建与产物
 
 - `apps/bob-plugin/build.js` 先执行 `tsc --noEmit`，再用 `esbuild` 打包入口到 `dist/main.js`。
-- 普通构建允许迁移期路径回退；发布构建必须使用有效 OALD/roots pack，并在写包后复核文件名、`info.json.version`、shards 和核心行为。
+- 普通构建允许迁移期路径回退；发布构建必须使用有效 OALD pack，并在写包后复核文件名、`info.json.version`、shards 和核心行为。
 - `ECDICT` 数据不打进插件包，用户需要单独放到插件数据目录，运行时才会启用这层回退。
 
 ### Python 数据流水线
 
 - `scripts/build_oald_data.py` 是 OALD 离线数据生成入口。
-- `scripts/build_roots_data.py` 负责词根词缀数据生成，从多个数据源合并。
 - `scripts/build_ecdict_data.py` 负责 ECDICT 数据生成。
-- `scripts/parse_eudic.py` 负责从 eudic 词典文件提取词根词缀数据。
 - `scripts/oald_pipeline/legacy_impl.py` 是 advisory deprecation 的薄适配器；正式流水线不再依赖它。
 - Python 依赖和私有词典资源不在仓库里时，不要假设这些构建命令能直接跑通。
-
-## 词根词缀数据源
-
-`scripts/build_roots_data.py` 合并两个本地私有来源：
-
-- `data/sources/roots/raw/cigen/`：已解析的 eudic 分片 JSON
-- `data/sources/roots/raw/morphemes/chunks/`：openetymology morphemes JSON
-
-可以分别用 `--eudic` 和 `--morphemes` 覆盖输入，用 `--output` 覆盖输出。默认输出是 `.cache/oald-build/output/packs/roots/latest/words/`，manifest 位于上一级目录。缺少输入时脚本不会删除已有 roots pack。
 
 ## 测试
 
@@ -106,5 +93,5 @@ python3 -m venv .venv
 - `OALD_MDX_PATH`：覆盖默认的 `oaldpe.mdx` 路径。
 - `OALD_BUILD_ROOT`：覆盖构建根目录，默认 `.cache/oald-build`。
 - `OALD_OUTPUT_ROOT`：覆盖构建产物目录。
-- `OALD_DICT_DIR` / `OALD_MANIFEST_PATH` / `OALD_ROOTS_DIR`：显式覆盖打包时的数据包路径。
+- `OALD_DICT_DIR` / `OALD_MANIFEST_PATH`：显式覆盖打包时的数据包路径。
 - `CGEL_CORPUS_PATH`：可选 CGEL 不规则动词语料路径；未设置或文件不存在时相关测试会明确跳过。
