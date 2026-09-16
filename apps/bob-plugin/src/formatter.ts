@@ -23,8 +23,9 @@ export const DISPLAY_SEPARATOR = "\u00A0";
 const TRANSLATION_LINE_REGEX = /^((?:[a-zA-Z0-9+]+\.\s*(?:\/\s*)?)+)\s*(.+)$/;
 
 /** 将翻译文本按行解析为词性-释义对 */
-export function parseParts(translation: string): Bob.PartObject[] {
+export function parseParts(translation: string | undefined): Bob.PartObject[] {
   const parts: Bob.PartObject[] = [];
+  if (!translation) return parts;
 
   for (const line of translation.split("\n")) {
     const match = line.match(TRANSLATION_LINE_REGEX);

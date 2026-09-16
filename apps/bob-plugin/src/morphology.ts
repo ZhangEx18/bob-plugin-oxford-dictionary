@@ -77,7 +77,7 @@ export function normalizeMorphologyWord(word: string): string {
  * 格式："key1:value1/key2:value2/..."，如 "s:apples/p:appled"
  * 用于将原始 exchange 数据转换为可处理的结构化格式
  */
-export function parseExchangeValues(exchange: string): Map<string, string[]> {
+export function parseExchangeValues(exchange: string | undefined): Map<string, string[]> {
   const values = new Map<string, string[]>();
   if (!exchange) {
     return values;
@@ -121,7 +121,8 @@ export function moveSurfaceComparativesIntoExchangeSlots(
     return exchangeValues;
   }
 
-  const hasComparativePos = entry.pos.includes("adj:") || entry.pos.includes("adv:");
+  const entryPos = entry.pos || "";
+  const hasComparativePos = entryPos.includes("adj:") || entryPos.includes("adv:");
   if (!hasComparativePos) {
     return exchangeValues;
   }
