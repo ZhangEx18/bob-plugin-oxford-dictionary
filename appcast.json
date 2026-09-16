@@ -2,6 +2,13 @@
   "identifier": "com.oald.dictionary",
   "versions": [
     {
+      "version": "8.6.2",
+      "desc": "测试与不变量补强（含一个仅用于测试的导出，故需发版）。新增\"所有路由可接受的词条必须可渲染\"不变量：遍历 364,961 个词条逐一验证，覆盖\"词条存在但运行时拒绝\"这一类问题 —— v8.5.0 的回归正是此类，当时 12 条变形词从离线可用退化为走网络却无测试报警。另新增数据驱动的来源展开回归测试（从数据包推导受影响集合），并按数据形状做了一次覆盖审计。",
+      "sha256": "900aa669379373ee08fd78af4cab4ec3ba2b0385ca36f16389ad40d419ef7f03",
+      "url": "https://github.com/ZhangEx18/bob-plugin-oxford-dictionary/releases/download/v8.6.2/bob-plugin-oald-dictionary8.6.2.bobplugin",
+      "minBobVersion": "1.0.0"
+    },
+    {
       "version": "8.6.1",
       "desc": "修复 v8.5.0 引入的回归：alias 指针化时为\"无自身内容\"新增的回落防护，误伤了靠来源展开渲染的变形词 —— traveled、lines、chilled、focussed、chiseled 等 12 条从离线可用变成走网络。这类词条自身没有释义文本，靠 origin 关系展开\"travel 的过去式 / 过去分词\"等区块渲染。防护现在只拦截真正无内容可渲染的条目。新增数据驱动的回归测试。",
       "sha256": "673037ce6c3522a03800e351c652ead8aeaacadb0a5d0c9dff171d49133c91d5",
