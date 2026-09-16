@@ -118,6 +118,38 @@ function hasTrackDown(entry) {
     && entry.phrasal_verbs.some((item) => item?.name === "track down");
 }
 
+const SAFE_SHARD_CHAR = /^[a-z0-9]$/;
+
+function encodeShardChar(char) {
+  if (SAFE_SHARD_CHAR.test(char)) return char;
+  return `~${char.codePointAt(0).toString(16).toUpperCase().padStart(6, "0")}`;
+}
+
+/**
+ * Mirrors the shard key derivation in shard_writer.py and data-loader.ts so the
+ * release gate reads the same file the runtime will. Kept independent on
+ * purpose: if the three ever disagree, this fails the release instead of
+ * shipping a pack whose entries are unreachable.
+ */
+function shardKeyForWord(word, length) {
+  const chars = Array.from(String(word).normalize("NFC").toLowerCase());
+  let key = "";
+  for (let index = 0; index < length; index += 1) {
+    const char = chars[index] || "_";
+    key += encodeShardChar(char === "ς" ? "σ" : char);
+  }
+  return key;
+}
+
+function oaldShardPath(manifest, rootDir, shardSubdir, word) {
+  const keyLength = manifest?.layout?.shardKeyLength;
+  if (typeof keyLength !== "number" || keyLength <= 0) {
+    // Legacy pack: one raw first character names the shard.
+    return `${rootDir}/${shardSubdir}/${word[0].toLowerCase()}.json`;
+  }
+  return `${rootDir}/${shardSubdir}/${shardKeyForWord(word, Math.floor(keyLength))}.json`;
+}
+
 function verifyReleaseArtifact(artifactPath, expectedVersion) {
   const expectedName = `bob-plugin-oald-dictionary${expectedVersion}.bobplugin`;
   invariant(path.basename(artifactPath) === expectedName, `release filename must be ${expectedName}`);
@@ -129,9 +161,12 @@ function verifyReleaseArtifact(artifactPath, expectedVersion) {
   invariant(zip.getEntry("main.js"), "release main.js is missing");
   invariant(zip.getEntry("icon.png"), "release icon.png is missing");
 
-  validateZipPack(zip, "packs/oald/2024.09", "oald", "dict");
+  const oaldManifest = validateZipPack(zip, "packs/oald/2024.09", "oald", "dict");
 
-  const trackShard = readZipJson(zip, "packs/oald/2024.09/dict/t.json");
+  const trackShard = readZipJson(
+    zip,
+    oaldShardPath(oaldManifest, "packs/oald/2024.09", "dict", "track"),
+  );
   invariant(hasTrackDown(trackShard.track), "standalone track must contain track down");
   for (const word of ["tracks", "tracked", "tracking"]) {
     invariant(trackShard[word] && typeof trackShard[word] === "object", `${word} entry is missing`);
