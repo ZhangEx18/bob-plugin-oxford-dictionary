@@ -2,6 +2,13 @@
   "identifier": "com.oald.dictionary",
   "versions": [
     {
+      "version": "8.4.3",
+      "desc": "移除词根词缀（roots）功能：该数据从未在查询结果中渲染，却要占用约 16 MB 打包体积。删除运行时 roots-loader、打包与发布门禁中的 roots 依赖，以及生成 roots 数据的 Python 脚本。查词行为不变",
+      "sha256": "63d9ab862baaa654fdb87036a7951a869d4cc29747286fda785367529c6c78e9",
+      "url": "https://github.com/ZhangEx18/bob-plugin-oxford-dictionary/releases/download/v8.4.3/bob-plugin-oald-dictionary8.4.3.bobplugin",
+      "minBobVersion": "1.0.0"
+    },
+    {
       "version": "8.4.2",
       "desc": "收口 npm workspace、现代 pack 路径与严格发布门禁；拆分 TypeScript 入口和 Python 流水线，保持 Bob 查词行为不变",
       "sha256": "5a13fca83acfd98407d32339729c8a081b465ada850b813e3227959aa809d071",
