@@ -1,52 +1,29 @@
-import { DictEntry, ShardCache } from "./types";
+import { ShardCache } from "./types";
 import { loadPackShard } from "./pack-loader";
 
 /**
  * Shard cache: stores loaded dictionary shards by first character.
  * Each shard is a map of word -> DictEntry for words starting with that character.
  * Shards are loaded from `dict/{char}.json` files on demand.
+ *
+ * This is the single source of entry objects. `relations.ts` caches per-entry
+ * parse results in WeakMaps keyed by object identity, so a word must always
+ * resolve to the same instance; keeping one cache (rather than a shard cache
+ * plus a separate entry pool) is what makes that guarantee hold. A second pool
+ * with its own eviction policy could hold a stale instance for a word whose
+ * shard had since been reloaded, which made `displayEntry !== exactEntry`
+ * comparisons misfire.
  */
 const shardCache: Map<string, ShardCache> = new Map();
-
-/**
- * Global entry cache pool: ensures the same word always resolves to the same
- * DictEntry instance. This is critical for WeakMap-based caches in relations.ts
- * to actually hit across repeated lookups.
- *
- * Design note: DictEntry objects are treated as immutable after loading.
- * Relations.ts relies on object identity for its WeakMap caches.
- *
- * A soft cap prevents unbounded growth in long-running sessions.
- * Once the cap is reached, newly loaded shards skip the global pool
- * but remain reachable via shardCache.
- */
-const MAX_ENTRY_CACHE_SIZE = 60000;
-const entryCache: Map<string, DictEntry> = new Map();
-
-/**
- * Once the cap is reached, later shards load without joining the shared pool.
- * That silently degrades `relations.ts`, whose WeakMap caches depend on object
- * identity, so report it once instead of letting the slowdown stay invisible.
- */
-let entryCacheCapWarned = false;
-
-export function getCachedEntry(word: string): DictEntry | undefined {
-  return entryCache.get(word.toLowerCase());
-}
 
 /**
  * Checks whether a queryable dictionary entry exists for the given surface form.
  * This is used to suppress broken jump links when upstream relation data points to
  * synthetic forms that were never emitted into packaged shards.
  */
-export function hasCachedOrShardEntry(word: string): boolean {
+export function hasDictionaryEntry(word: string): boolean {
   const lower = word.toLowerCase();
-  if (entryCache.has(lower)) {
-    return true;
-  }
-
-  const shard = getShardForWord(lower);
-  return !!shard?.[lower];
+  return !!getShardForWord(lower)?.[lower];
 }
 
 export function loadShard(char: string): ShardCache | null {
@@ -58,22 +35,6 @@ export function loadShard(char: string): ShardCache | null {
     const shard = loadPackShard<ShardCache>("oald", char);
     if (!shard) {
       return null;
-    }
-
-    for (const [word, entry] of Object.entries(shard)) {
-      const lower = word.toLowerCase();
-      if (entryCache.has(lower)) {
-        console.warn(`[data-loader] Duplicate entry for "${word}" across shards`);
-      } else if (entryCache.size < MAX_ENTRY_CACHE_SIZE) {
-        entryCache.set(lower, entry);
-      } else if (!entryCacheCapWarned) {
-        entryCacheCapWarned = true;
-        console.warn(
-          `[data-loader] Entry cache reached its ${MAX_ENTRY_CACHE_SIZE} cap; later shards `
-          + "load without joining the shared pool, so identity-based relation caches will "
-          + "hit less often for the rest of this session.",
-        );
-      }
     }
 
     shardCache.set(char, shard);
@@ -90,5 +51,6 @@ export function loadShard(char: string): ShardCache | null {
 export function getShardForWord(word: string): ShardCache | null {
   const lower = word.toLowerCase();
   const firstChar = lower[0] || "_";
+  // APFS case folding treats final sigma and sigma filenames as equivalent.
   return loadShard(firstChar === "ς" ? "σ" : firstChar);
 }

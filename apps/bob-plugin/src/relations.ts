@@ -1,5 +1,5 @@
 import { DictEntry, WordRelation, OriginSource, RelationEdge, ShardCache, WordFamilyItem } from "./types";
-import { getShardForWord, hasCachedOrShardEntry } from "./data-loader";
+import { getShardForWord, hasDictionaryEntry } from "./data-loader";
 
 /**
  * Maps inflection labels (in Chinese) to their applicable POS scopes.
@@ -29,9 +29,10 @@ export const EXTRA_PLURALS: Record<string, string[]> = {
  * WeakMap caches for relation parsing results.
  *
  * IMPORTANT: These caches rely on DictEntry object identity.
- * data-loader.ts maintains an entryCache that ensures the same word
- * always returns the same DictEntry instance. If that guarantee is broken
- * (e.g., by creating new DictEntry objects), these caches will silently
+ * data-loader.ts keeps one object per entry by holding a single shard cache,
+ * so the same word always returns the same DictEntry instance, and a shard is
+ * only ever parsed once. If that guarantee is broken (e.g., by creating new
+ * DictEntry objects for a word already loaded), these caches will silently
  * miss, causing performance degradation but not correctness issues.
  *
  * DictEntry objects are treated as immutable after loading from JSON,
@@ -101,6 +102,17 @@ export function getBackRelation(entry: DictEntry): WordRelation | null {
     return result;
   }
 
+  // Alias entries carry no origin edge by design (see the alias relation
+  // invariant). Their redirect target lives on display_word / linked_word
+  // instead, so surface it as the canonical form. Without this an alias page
+  // showed its definition with no indication of which entry it belongs to.
+  const linkedTarget = entry.display_word || entry.linked_word;
+  if (linkedTarget && linkedTarget.toLowerCase() !== entry.word.toLowerCase()) {
+    const result = { word: linkedTarget, label: "原形" };
+    backRelationCache.set(entry, result);
+    return result;
+  }
+
   backRelationCache.set(entry, null);
   return null;
 }
@@ -126,7 +138,7 @@ export function getChildRelations(entry: DictEntry): WordRelation[] {
     return childRelationsCache.get(entry)!;
   }
 
-  const relationChildren = collectChildRelations(entry, hasCachedOrShardEntry);
+  const relationChildren = collectChildRelations(entry, hasDictionaryEntry);
 
   childRelationsCache.set(entry, relationChildren);
   return relationChildren;
@@ -155,7 +167,7 @@ export function getCrossReferences(entry: DictEntry): WordRelation[] {
     return crossReferencesCache.get(entry)!;
   }
 
-  const relationRefs = collectCrossReferences(entry, hasCachedOrShardEntry);
+  const relationRefs = collectCrossReferences(entry, hasDictionaryEntry);
 
   crossReferencesCache.set(entry, relationRefs);
   return relationRefs;
@@ -260,7 +272,7 @@ export function getOriginSources(entry: DictEntry): OriginSource[] {
     return originSourcesCache.get(entry)!;
   }
 
-  const originSources = collectOriginSources(entry, hasCachedOrShardEntry);
+  const originSources = collectOriginSources(entry, hasDictionaryEntry);
 
   originSourcesCache.set(entry, originSources);
   return originSources;
@@ -325,7 +337,7 @@ export function shouldExpandOriginSources(entry: DictEntry): boolean {
     return shouldExpandCache.get(entry)!;
   }
 
-  const result = evaluateOriginExpansion(entry, hasCachedOrShardEntry);
+  const result = evaluateOriginExpansion(entry, hasDictionaryEntry);
 
   shouldExpandCache.set(entry, result);
   return result;

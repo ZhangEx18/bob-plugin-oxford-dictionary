@@ -1,15 +1,18 @@
-import { getCachedEntry, getShardForWord } from "./data-loader";
+import { getShardForWord } from "./data-loader";
 import { getBackRelation, getChildRelations, shouldExpandOriginSources } from "./relations";
-import { DictEntry, EntryView, ShardCache, WordRelation } from "./types";
+import { DictEntry, EntryView, WordRelation } from "./types";
 
 function resolveDisplayEntry(
   exactEntry: DictEntry,
-  shard: ShardCache,
 ): { displayEntry: DictEntry; isFallbackDisplay: boolean } {
   const displayWord = exactEntry.display_word || exactEntry.linked_word || exactEntry.word;
+  // Resolve through getShardForWord so the target's shard is loaded on demand.
+  // Reading it out of a global pool instead made the outcome depend on which
+  // shards happened to be loaded already: the same query returned the alias's
+  // copied content in one session and the resolved target in another.
   const displayEntry = shouldExpandOriginSources(exactEntry)
     ? exactEntry
-    : (getCachedEntry(displayWord) || shard[displayWord.toLowerCase()] || exactEntry);
+    : (getShardForWord(displayWord)?.[displayWord.toLowerCase()] || exactEntry);
 
   return {
     displayEntry,
@@ -42,7 +45,7 @@ export function buildEntryView(queryWord: string): EntryView | null {
   const exactEntry = shard?.[normalizedWord];
   if (!shard || !exactEntry) return null;
 
-  const { displayEntry, isFallbackDisplay } = resolveDisplayEntry(exactEntry, shard);
+  const { displayEntry, isFallbackDisplay } = resolveDisplayEntry(exactEntry);
   return {
     queryWord: normalizedWord,
     displayWord: exactEntry.display_word || exactEntry.linked_word || exactEntry.word,
