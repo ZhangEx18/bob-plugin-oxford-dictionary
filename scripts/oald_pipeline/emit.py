@@ -9,7 +9,7 @@ from typing import Any
 
 from .config import DATA_VERSION, PIPELINE_VERSION, SCHEMA_VERSION
 from .models import BuildContext
-from .shard_writer import write_shards
+from .shard_writer import strip_alias_payload, write_shards
 from .state import StateStore
 
 
@@ -69,7 +69,9 @@ def run_emit(context: BuildContext, store: StateStore) -> dict[str, Any]:
     context.paths.dict_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Writing JSON shards to {context.paths.dict_dir}...")
-    write_shards(final_entries, context.paths.dict_dir)
+    # Aliases ship as pointers only; see ALIAS_POINTER_FIELDS.
+    compacted = {key: strip_alias_payload(entry) for key, entry in final_entries.items()}
+    write_shards(compacted, context.paths.dict_dir)
 
     manifest = emit_manifest(context, summary)
     store.upsert_one("meta", "manifest", manifest)
