@@ -352,6 +352,7 @@ python3 scripts/build_ecdict_data.py --db /path/to/stardict.db --output /custom/
 
 ## 版本历史
 
+- **v8.4.5** — 修复跳转词条（alias）的两处缺陷：① 同一查询的结果会随会话中已加载的分片而变化 —— `a-man` 在 `m.json` 未加载时显示 `复数:men`，加载后变为空；② alias 会展示从目标词整段复制的词形变化（146,506 条与目标逐字节相同），等于在 `a-man` 名下展示 `man` 的变形。现在 alias 统一且确定地只显示一行回链：`a-man` → `原形:man`，`café` → `原形:cafe`，`etc.` → `原形:etc`。同时移除与分片缓存并存的 entryCache（它自带淘汰策略，可能持有同一词的陈旧实例而破坏对象身份缓存），分片键完整性改由不变量测试保障
 - **v8.4.4** — 修复三处查词缺陷：① 单词在 OALD/ECDICT 均未命中且有道词典为空、翻译也失败时，`completion` 从不被调用导致 Bob 永久无响应；② 缩写、缩略、重音词（`don't`、`can't`、`o'clock`、`café`、`etc.`、`Mr.`）明明在离线词库中，却因路由字符类过窄而绕开离线词典、每次走网络；③ 目标语言非中文时仍返回中文词典卡片。另修正中文译文双引号被翻倍，并将词族查找改为按分片建索引（原为每次未命中全片扫描）
 - **v8.4.3** — 移除词根词缀（roots）功能：它从未在查询结果中渲染，却要占用约 16 MB 打包体积。删除运行时 roots-loader、打包与发布门禁中的 roots 依赖，以及生成 roots 数据的 Python 脚本。查词行为不变
 - **v8.4.2** — 收口 npm workspace、现代 pack 路径与严格发布门禁；拆分 TypeScript 入口和 Python 流水线，保持 Bob 查词行为不变；roots 继续打包但不在 UI 展示；补齐 `info.json`、`appcast.json` 与发布/校验脚本，打通插件自更新链路
