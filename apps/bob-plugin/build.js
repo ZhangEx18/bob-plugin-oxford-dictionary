@@ -1,9 +1,10 @@
-/** @typedef {{ identifier: string; version: string; category: string; name: string; author: string; minBobVersion: string; }} PluginInfo */
+/** @typedef {{ identifier: string; version: string; category: string; name: string; summary?: string; author: string; homepage?: string; icon?: string; appcast?: string; minBobVersion: string; options?: unknown[]; }} PluginInfo */
 
 const fs = require("fs");
 const path = require("path");
 const AdmZip = require("adm-zip");
 const { version } = require("./package.json");
+const PLUGIN_INFO = require("./info.json");
 const WORKSPACE_ROOT = path.resolve(__dirname, "../..");
 const workspaceLock = require(path.join(WORKSPACE_ROOT, "package-lock.json"));
 const {
@@ -20,14 +21,25 @@ const MAIN_JS_PATH = path.resolve(WORKSPACE_ROOT, "./dist/main.js");
 const PLUGIN_NAME = `bob-plugin-oald-dictionary${version}.bobplugin`;
 const ARTIFACT_PATH = path.resolve(WORKSPACE_ROOT, `./release/${PLUGIN_NAME}`);
 
+// info.json is the shipped plugin manifest and the release-identity source of truth.
+// package.json stays the build version source, so both must agree: installers and
+// the release tooling read either file and expect the same plugin identity.
+if (PLUGIN_INFO.version !== version) {
+  throw new Error(
+    `info.json version (${PLUGIN_INFO.version}) must match package.json version (${version})`,
+  );
+}
+if (!PLUGIN_INFO.identifier) {
+  throw new Error("info.json must declare an identifier");
+}
+if (!PLUGIN_INFO.appcast) {
+  throw new Error("info.json must declare an appcast URL, otherwise Bob cannot detect updates");
+}
+
 /** @type {PluginInfo} */
 const INFO_JSON = {
-  identifier: "com.oald.dictionary",
-  version: version,
-  category: "translate",
-  name: "牛津高阶英汉双解词典",
-  author: "oald-user",
-  minBobVersion: "1.0.0",
+  ...PLUGIN_INFO,
+  version,
 };
 
 const isRelease = process.argv.includes("--release");
