@@ -82,17 +82,9 @@ test('every shard file is non-empty and loads as an object', () => {
   }
 })
 
-test('shard keys match first character of contained entry words', () => {
-  for (const { key } of shards) {
-    if (!/^[a-z]$/i.test(key)) continue
-    const shard = JSON.parse(fs.readFileSync(getShardPath(key), 'utf8'))
-    for (const word of Object.keys(shard)) {
-      const firstChar = word.charAt(0).toLowerCase()
-      assert.equal(firstChar, key.toLowerCase(),
-        `word "${word}" in shard "${key}.json" should start with "${key}"`)
-    }
-  }
-})
+// Superseded by 'every entry is stored in the shard the runtime derives for it',
+// which uses the runtime's own key derivation instead of assuming one-character
+// shard names.
 
 test('build manifest exists and exposes core metadata when present', () => {
   const manifestPath = getManifestPath()
@@ -261,12 +253,15 @@ test('alias entries only carry display-only word-family relations', () => {
 // Shard placement invariants
 // ---------------------------------------------------------------------------
 
-test('every entry is stored in the shard the runtime derives for it', () => {
-  // data-loader picks a shard from the word's first character (folding final
-  // sigma onto sigma), so a key stored under any other shard is unreachable at
-  // runtime. This replaces the cross-shard duplicate warning that used to live
-  // in the shared entry pool.
-  const fold = (char) => (char === 'ς' ? 'σ' : char)
+test('every entry is stored in the shard the runtime derives for it', async () => {
+  // Uses the runtime's own key derivation, so it fails if the writer and reader
+  // ever disagree about shard naming. A mismatch would make entries silently
+  // unreachable rather than raising an error. This replaces the cross-shard
+  // duplicate warning that used to live in the shared entry pool.
+  const runtime = await loadRuntime()
+  const loader = runtime.__dataLoaderForTests
+  assert.ok(loader, 'runtime must expose __dataLoaderForTests')
+
   const dictDir = getDictDir()
   const failures = []
 
@@ -275,8 +270,8 @@ test('every entry is stored in the shard the runtime derives for it', () => {
     const shardKey = file.replace('.json', '')
     const shard = JSON.parse(fs.readFileSync(path.join(dictDir, file), 'utf8'))
     for (const word of Object.keys(shard)) {
-      const derived = fold((word[0] || '_').toLowerCase())
-      if (derived !== fold(shardKey)) {
+      const derived = loader.shardKeyForWord(word)
+      if (derived !== shardKey) {
         failures.push({ file, word, derived })
         if (failures.length >= 10) break
       }

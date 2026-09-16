@@ -65,8 +65,8 @@ with contextlib.redirect_stdout(io.StringIO()):
             Path(directory),
         )
         shard_names = sorted(path.name for path in shard_paths)
-        walk_shard = json.loads((Path(directory) / "w.json").read_text())
-        sigma_shard = json.loads((Path(directory) / "σ.json").read_text())
+        walk_shard = json.loads((Path(directory) / "wa.json").read_text())
+        sigma_shard = json.loads((Path(directory) / "~0003C3~00005F.json").read_text())
 
 print(json.dumps({
     "children": children["walk"],
@@ -118,8 +118,10 @@ test("link processing classifies a known form as an inflection", () => {
   );
 });
 
-test("shard writer uses first-character filenames and round-trips entries", () => {
-  assert.deepEqual(snapshot.shardNames, ["#.json", "w.json", "σ.json"]);
+test("shard writer uses encoded two-character filenames and round-trips entries", () => {
+  // Two-character keys, percent-style escaping via "~", and final sigma folded
+  // onto sigma so both spellings share one shard.
+  assert.deepEqual(snapshot.shardNames, ["wa.json", "~000023t.json", "~0003C3~00005F.json"]);
   assert.equal(snapshot.walkShardWord, "walk");
   assert.deepEqual(snapshot.sigmaShardWords, ["ς", "σ"]);
 });

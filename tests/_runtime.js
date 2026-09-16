@@ -22,7 +22,7 @@ function createFileBridge(overrides = {}) {
           packType: 'oald',
           shardCount: 1,
           entryCount: 1,
-          layout: { shardSubdir: 'dict', shardExtension: '.json' },
+          layout: { shardSubdir: 'dict', shardExtension: '.json', shardKeyLength: 2 },
         }) } }
       }
       if (relativePath.startsWith('packs/oald/2024.09/dict/')) {
@@ -99,7 +99,7 @@ async function loadRuntime(overrides = {}) {
     JSON,
   }
 
-  vm.runInNewContext(`${source}\nmodule.exports = { translate, supportLanguages, __relationsForTests: typeof __relationsForTests !== 'undefined' ? __relationsForTests : null };`, context, {
+    vm.runInNewContext(`${source}\nmodule.exports = { translate, supportLanguages, __relationsForTests: typeof __relationsForTests !== 'undefined' ? __relationsForTests : null, __dataLoaderForTests: typeof __dataLoaderForTests !== 'undefined' ? __dataLoaderForTests : null };`, context, {
     filename: ENTRY_TS_PATH,
   })
 
