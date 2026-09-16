@@ -6,7 +6,7 @@
 
 Bob 牛津高阶英汉双解词典插件（OALD 10th Edition）。
 
-> 当前仓库以**代码仓库**定位为主：包含插件代码、构建脚本、测试与发布成品，但不再把词库数据作为长期随仓库演进的真源。单词词库与词根词缀词库应独立为外部数据包管理。
+> 当前仓库以**代码仓库**定位为主：包含插件代码、构建脚本、测试与发布成品，但不再把词库数据作为长期随仓库演进的真源。单词词库应独立为外部数据包管理。
 
 ## 核心亮点
 
@@ -27,7 +27,7 @@ Bob 牛津高阶英汉双解词典插件（OALD 10th Edition）。
 - `scripts/`：正式构建脚本与数据流水线
 - `scripts/archive/`：历史实验脚本与已退出主流程的工具
 - `tests/`：运行时与数据流水线回归测试
-- `data/sources/`：词库源文件约定位置（私有 OALD、ECDICT 原始数据、roots 原始来源）
+- `data/sources/`：词库源文件约定位置（私有 OALD、ECDICT 原始数据）
 - `data/build/`：构建中间态（推荐承载 SQLite 状态库）
 - `data/packs/`：处理后的外部数据包目录
 - `docs/`：维护文档与结构说明
@@ -82,13 +82,6 @@ data/packs/
         a.json
         b.json
         ...
-  roots/
-    latest/
-      manifest.json
-      words/
-        a.json
-        b.json
-        ...
 ```
 
 说明：
@@ -97,8 +90,6 @@ data/packs/
   - 单词词库主包
 - `ecdict/.../dict/`
   - 离线补词包
-- `roots/.../words/`
-  - 词根词缀按单词索引的数据包
 
 数据包解析顺序固定为：显式环境变量、`data/packs/`、`.cache/oald-build/output/packs/`、旧 `.cache` 输出、旧 `dict/`。旧路径仅用于开发和迁移兼容，发布构建不会接受缺少有效 manifest 的旧数据。
 
@@ -131,11 +122,11 @@ npm run build
 npm run build:release
 ```
 
-`npm run build` 是一次性开发构建并会正常退出；需要持续监听时使用 `npm run dev`。`npm run build:release` 只打包已存在且通过 schema、shard 和质量指标校验的 OALD/roots 数据包，不会隐式重建或复用未知旧数据。
+`npm run build` 是一次性开发构建并会正常退出；需要持续监听时使用 `npm run dev`。`npm run build:release` 只打包已存在且通过 schema、shard 和质量指标校验的 OALD 数据包，不会隐式重建或复用未知旧数据。
 
 ## 发布流程
 
-发布产物内嵌 OALD/roots 数据包，而这些数据包不在仓库中，因此**发布产物必须在本地构建，CI 无法代劳**。CI 负责的是类型检查、测试与发布一致性校验。
+发布产物内嵌 OALD 数据包，而这个数据包不在仓库中，因此**发布产物必须在本地构建，CI 无法代劳**。CI 负责的是类型检查、测试与发布一致性校验。
 
 ```bash
 npm run build:release                        # 1. 严格校验并打包到 release/
@@ -261,37 +252,6 @@ python3 scripts/build_oald_data.py --stage emit
 
 这让构建状态可以回放、抽样查询，并为后续增量构建做准备。
 
-## 词根词缀数据包
-
-当前 roots 数据按 **A. 按单词索引** 方式组织。
-
-推荐外部数据包目录：
-
-```text
-data/packs/roots/latest/
-  manifest.json
-  words/
-    a.json
-    b.json
-    ...
-```
-
-运行时当前只依赖：
-
-- `word -> RootEntry`
-
-即：
-- 查询一个单词
-- 直接返回它的 `rootBreakdown` / `roots[]`
-
-当前不要求额外维护：
-- `root -> metadata`
-- `root family -> related words`
-
-8.4.2 仍会生成并打包 roots 数据，以保持数据包契约；Bob 查询结果暂不渲染 roots 区块。
-
-如果后续要做点击词根、按词根反查单词，再考虑增加第二层 root 索引。
-
 ### 调试指定词
 
 可以直接检查某个词在构建状态中的规范化结果和最终结果：
@@ -340,7 +300,7 @@ python3 scripts/build_oald_data.py --inspect decide
 - `wordFamilyMissingCount`
 - `verbFormMissingCount`
 
-发布打包时，构建脚本按统一路径顺序解析数据包，并要求 OALD 与 roots manifest 声明的所有 shards 都存在。OALD manifest 还必须包含流水线版本和质量指标，且 `danglingNavigableTargets` 必须为 0。
+发布打包时，构建脚本按统一路径顺序解析数据包，并要求 OALD manifest 声明的所有 shards 都存在。OALD manifest 还必须包含流水线版本和质量指标，且 `danglingNavigableTargets` 必须为 0。
 
 ## ECDICT 离线补词（可选）
 
@@ -390,6 +350,7 @@ python3 scripts/build_ecdict_data.py --db /path/to/stardict.db --output /custom/
 
 ## 版本历史
 
+- **v8.4.3** — 移除词根词缀（roots）功能：它从未在查询结果中渲染，却要占用约 16 MB 打包体积。删除运行时 roots-loader、打包与发布门禁中的 roots 依赖，以及生成 roots 数据的 Python 脚本。查词行为不变
 - **v8.4.2** — 收口 npm workspace、现代 pack 路径与严格发布门禁；拆分 TypeScript 入口和 Python 流水线，保持 Bob 查词行为不变；roots 继续打包但不在 UI 展示；补齐 `info.json`、`appcast.json` 与发布/校验脚本，打通插件自更新链路
 - **v8.4.1** — 词根拆解细化：eudic 源数据粗粒度根自动用知识库二次分解；etymology_2 fallback 提取更深层词源树；英文+中文含义同时展示；修复打包路径与 pack-loader 对齐；去掉冗余"词根词缀"section
 - **v7.0.0** — ECDICT 离线补词层（数据分离，可选独立下载）
