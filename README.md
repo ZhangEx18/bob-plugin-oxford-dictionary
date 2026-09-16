@@ -352,6 +352,7 @@ python3 scripts/build_ecdict_data.py --db /path/to/stardict.db --output /custom/
 
 ## 版本历史
 
+- **v8.4.4** — 修复三处查词缺陷：① 单词在 OALD/ECDICT 均未命中且有道词典为空、翻译也失败时，`completion` 从不被调用导致 Bob 永久无响应；② 缩写、缩略、重音词（`don't`、`can't`、`o'clock`、`café`、`etc.`、`Mr.`）明明在离线词库中，却因路由字符类过窄而绕开离线词典、每次走网络；③ 目标语言非中文时仍返回中文词典卡片。另修正中文译文双引号被翻倍，并将词族查找改为按分片建索引（原为每次未命中全片扫描）
 - **v8.4.3** — 移除词根词缀（roots）功能：它从未在查询结果中渲染，却要占用约 16 MB 打包体积。删除运行时 roots-loader、打包与发布门禁中的 roots 依赖，以及生成 roots 数据的 Python 脚本。查词行为不变
 - **v8.4.2** — 收口 npm workspace、现代 pack 路径与严格发布门禁；拆分 TypeScript 入口和 Python 流水线，保持 Bob 查词行为不变；roots 继续打包但不在 UI 展示；补齐 `info.json`、`appcast.json` 与发布/校验脚本，打通插件自更新链路
 - **v8.4.1** — 词根拆解细化：eudic 源数据粗粒度根自动用知识库二次分解；etymology_2 fallback 提取更深层词源树；英文+中文含义同时展示；修复打包路径与 pack-loader 对齐；去掉冗余"词根词缀"section
