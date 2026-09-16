@@ -10,7 +10,7 @@
       "url": "https://github.com/ZhangEx18/bob-plugin-oxford-dictionary",
       "provider": "github",
       "link_mode": "web",
-      "revision": "e287aaefe244554f48b21fb69b4c7f058e6963b1"
+      "revision": "01899f78709006a0ca7563d067e40316c6a1099b"
     },
     "views": [
       {
@@ -63,7 +63,7 @@
       "type": "database",
       "label": "离线词库包",
       "sublabel": "OALD / ECDICT",
-      "tag": "shard + manifest",
+      "tag": "1020 分片 + manifest",
       "sources": [
         { "path": "README.md", "line": 67, "end_line": 96, "label": "数据包布局" },
         { "path": "apps/bob-plugin/src/data-loader.ts", "label": "分片加载" }
@@ -131,8 +131,8 @@
       "id": "release",
       "type": "external",
       "label": "Bob 插件产物",
-      "sublabel": ".bobplugin",
-      "tag": "dist / release",
+      "sublabel": ".bobplugin + appcast",
+      "tag": "自更新链路",
       "sources": [
         { "path": "README.md", "line": 24, "end_line": 40, "label": "仓库结构" },
         { "path": "apps/bob-plugin/build.js", "label": "打包产物" }
@@ -157,7 +157,8 @@
       "title": "运行时",
       "items": [
         "Bob 查询先进入 apps/bob-plugin/src/translate.ts",
-        "OALD、ECDICT 通过分片数据包离线读取",
+        "OALD、ECDICT 走离线分片；分片按词条前两个字符切分，共 1,020 片",
+        "跳转词条只存指针，解析目标分片后统一显示一行回链",
         "有道只承担未收录单词和多语言翻译 fallback"
       ]
     },
@@ -167,7 +168,8 @@
       "items": [
         "scripts/build_oald_data.py 是 OALD 数据构建入口",
         "流水线按 extract、normalize、relate、emit 分阶段执行",
-        "最终输出 dict/*.json 与 manifest.json"
+        "alias 条目只输出指针，数据由 424 MB 降至 138 MB",
+        "输出 dict/*.json 与 manifest.json，后者声明 shardKeyLength"
       ]
     },
     {
@@ -175,8 +177,9 @@
       "title": "发布",
       "items": [
         "apps/bob-plugin/build.js 负责打包插件和数据资源",
-        "tests/ 覆盖运行时、流水线和发布校验",
-        "通过质量门后生成 dist/ 或 release/ 下的 .bobplugin"
+        "不变量测试覆盖全量词条：可渲染性、分片键归属、alias 契约",
+        "通过质量门后产出 release/ 下的 .bobplugin 并刷新 appcast.json",
+        "Bob 依 appcast 校验 sha256 完成自更新"
       ]
     }
   ]
