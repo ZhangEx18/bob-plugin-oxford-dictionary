@@ -113,18 +113,39 @@ data/packs/
 
 在 Bob 设置页中打开插件列表，对本插件右键后选择"检测更新"。
 
+更新检查读取本仓库 `main` 分支上的 [`appcast.json`](appcast.json)，其中记录了每个版本的 sha256 与下载地址：
+
+- 插件包内的 `info.json` 通过 `appcast` 字段声明该地址，字段缺失或指错都会让更新检查失效
+- Bob 在下载后校验 sha256，哈希不一致会拒绝安装
+- 发布新版本后需要把 `appcast.json` 推送到 `main`，更新才会对外可见
+
 ## 本地开发
 
 ```bash
 npm install
 npm run lint
-npm run test:fast
-npm test
+npm run test:ci       # 不依赖私有词库数据的子集，CI 也跑这一组
+npm run test:fast     # 需要可读的 dict/ 数据
+npm test              # 全量测试
 npm run build
 npm run build:release
 ```
 
 `npm run build` 是一次性开发构建并会正常退出；需要持续监听时使用 `npm run dev`。`npm run build:release` 只打包已存在且通过 schema、shard 和质量指标校验的 OALD/roots 数据包，不会隐式重建或复用未知旧数据。
+
+## 发布流程
+
+发布产物内嵌 OALD/roots 数据包，而这些数据包不在仓库中，因此**发布产物必须在本地构建，CI 无法代劳**。CI 负责的是类型检查、测试与发布一致性校验。
+
+```bash
+npm run build:release                        # 1. 严格校验并打包到 release/
+npm run release:verify                       # 2. 预检：校验产物并比对哈希，不写入任何文件
+npm run release:publish -- --notes "更新说明"  # 3. 创建 GitHub Release 并刷新 appcast.json
+```
+
+`release:publish` 会复用发布门禁校验产物，并核对包内 `info.json` 的 `identifier`、`version`、`appcast` 是否与源码一致。不一致会直接拒绝发布，避免再次发出无法自更新的包。
+
+`appcast.json` 推送到 `main` 后，[`release-verification.yml`](.github/workflows/release-verification.yml) 会下载对应的已发布资产并核对 sha256，让 appcast 漂移在 CI 阶段就暴露，而不是等到用户安装时才失败。
 
 ## 数据构建与产物治理
 
@@ -369,7 +390,7 @@ python3 scripts/build_ecdict_data.py --db /path/to/stardict.db --output /custom/
 
 ## 版本历史
 
-- **v8.4.2** — 收口 npm workspace、现代 pack 路径与严格发布门禁；拆分 TypeScript 入口和 Python 流水线，保持 Bob 查词行为不变；roots 继续打包但不在 UI 展示
+- **v8.4.2** — 收口 npm workspace、现代 pack 路径与严格发布门禁；拆分 TypeScript 入口和 Python 流水线，保持 Bob 查词行为不变；roots 继续打包但不在 UI 展示；补齐 `info.json`、`appcast.json` 与发布/校验脚本，打通插件自更新链路
 - **v8.4.1** — 词根拆解细化：eudic 源数据粗粒度根自动用知识库二次分解；etymology_2 fallback 提取更深层词源树；英文+中文含义同时展示；修复打包路径与 pack-loader 对齐；去掉冗余"词根词缀"section
 - **v7.0.0** — ECDICT 离线补词层（数据分离，可选独立下载）
 - **v5.0.0** — OALD + Youdao fallback，支持多语言翻译

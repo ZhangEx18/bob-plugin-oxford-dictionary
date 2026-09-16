@@ -4,13 +4,18 @@ name: Release Verification
 # is not refreshed. Bob refuses to install on a hash mismatch, so the drift only
 # reaches users. This job fails loudly instead.
 #
+# Triggering on appcast.json changes, rather than on tag pushes, is deliberate:
+# `release:publish` creates the tag before appcast.json is committed, so a tag
+# push would still read the previous version from main and verify the wrong entry.
+#
 # The release artifact itself cannot be built in CI: it embeds the private
 # OALD/roots data packs. Build and publish locally with:
 #   npm run build:release && npm run release:publish
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths: ["appcast.json"]
   workflow_dispatch:
 
 jobs:
