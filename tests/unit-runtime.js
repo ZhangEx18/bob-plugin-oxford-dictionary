@@ -18,7 +18,7 @@ function createFileBridge() {
               packType: "oald",
               shardCount: 1,
               entryCount: 1,
-              layout: { shardSubdir: "dict", shardExtension: ".json" },
+              layout: { shardSubdir: 'dict', shardExtension: '.json', shardKeyLength: 2 },
             });
           },
         };

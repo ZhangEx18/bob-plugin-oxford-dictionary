@@ -3,12 +3,11 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { runTranslate, loadRuntime } = require('./_runtime')
-const { getShardPath } = require('./dict-path')
+const { loadLetterShard, loadWordShard, shardKeyForWord } = require('./dict-path')
 const DISPLAY_SEPARATOR = '\u00A0'
 
-function loadShard(char) {
-  const dictPath = getShardPath(char)
-  return JSON.parse(fs.readFileSync(dictPath, 'utf8'))
+function loadShard(letter) {
+  return loadLetterShard(letter)
 }
 
 function visibleParts(parts) {
@@ -255,7 +254,7 @@ test('translation supports a third language pair through Youdao', async () => {
 })
 
 test('runtime uses structured verb_forms when exchange relations are absent', async () => {
-  const shard = loadShard('d')
+  const shard = loadWordShard('decide')
   const decide = shard.decide
   const modifiedShard = {
     ...shard,
@@ -267,7 +266,7 @@ test('runtime uses structured verb_forms when exchange relations are absent', as
   }
 
   const result = await runTranslate('decide', {
-    'packs/oald/2024.09/dict/d.json': JSON.stringify(modifiedShard),
+    [`packs/oald/2024.09/dict/${shardKeyForWord('decide')}.json`]: JSON.stringify(modifiedShard),
   })
   const exchangeRows = result.toDict.exchanges.map((item) => `${item.name}:${item.words.join(',')}`)
 
@@ -280,7 +279,7 @@ test('runtime uses structured verb_forms when exchange relations are absent', as
 })
 
 test('fallback display keeps compound OALD POS blocks when origin scope matches', async () => {
-  const shard = loadShard('h')
+  const shard = loadWordShard('happy')
   const happy = shard.happy
   const modifiedShard = {
     ...shard,
@@ -297,7 +296,7 @@ test('fallback display keeps compound OALD POS blocks when origin scope matches'
   }
 
   const result = await runTranslate('happier', {
-    'packs/oald/2024.09/dict/h.json': JSON.stringify(modifiedShard),
+    [`packs/oald/2024.09/dict/${shardKeyForWord('happy')}.json`]: JSON.stringify(modifiedShard),
   })
 
   assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [
@@ -451,7 +450,7 @@ test('leaves aggregates parts from both leaf and leave inflection sources', asyn
 })
 
 test('runtime prefers translation_parts when present', async () => {
-  const shard = loadShard('o')
+  const shard = loadWordShard('obtain')
   const obtain = shard.obtain
   const modifiedShard = {
     ...shard,
@@ -466,7 +465,7 @@ test('runtime prefers translation_parts when present', async () => {
   }
 
   const result = await runTranslate('obtain', {
-    'packs/oald/2024.09/dict/o.json': JSON.stringify(modifiedShard),
+    [`packs/oald/2024.09/dict/${shardKeyForWord('obtain')}.json`]: JSON.stringify(modifiedShard),
   })
 
   assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [
@@ -476,7 +475,7 @@ test('runtime prefers translation_parts when present', async () => {
 })
 
 test('runtime falls back to translation string when translation_parts is absent', async () => {
-  const shard = loadShard('o')
+  const shard = loadWordShard('obtain')
   const obtain = shard.obtain
   const { translation_parts, ...obtainWithoutParts } = obtain
   const modifiedShard = {
@@ -485,7 +484,7 @@ test('runtime falls back to translation string when translation_parts is absent'
   }
 
   const result = await runTranslate('obtain', {
-    'packs/oald/2024.09/dict/o.json': JSON.stringify(modifiedShard),
+    [`packs/oald/2024.09/dict/${shardKeyForWord('obtain')}.json`]: JSON.stringify(modifiedShard),
   })
 
   assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [
@@ -494,7 +493,7 @@ test('runtime falls back to translation string when translation_parts is absent'
 })
 
 test('runtime falls back to translation string when translation_parts is unusable', async () => {
-  const shard = loadShard('o')
+  const shard = loadWordShard('obtain')
   const obtain = shard.obtain
   const modifiedShard = {
     ...shard,
@@ -505,7 +504,7 @@ test('runtime falls back to translation string when translation_parts is unusabl
   }
 
   const result = await runTranslate('obtain', {
-    'packs/oald/2024.09/dict/o.json': JSON.stringify(modifiedShard),
+    [`packs/oald/2024.09/dict/${shardKeyForWord('obtain')}.json`]: JSON.stringify(modifiedShard),
   })
 
   assert.deepEqual(JSON.parse(JSON.stringify(visibleParts(result.toDict.parts))), [

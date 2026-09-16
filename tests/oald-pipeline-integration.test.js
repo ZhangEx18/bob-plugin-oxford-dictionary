@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.S
         summary = run_relate(store)
         validate_summary(summary)
         manifest = run_emit(BuildContext(mdx_path=mdx_path, paths=paths), store)
-        shard = json.loads((paths.dict_dir / "w.json").read_text())
+        shard = json.loads((paths.dict_dir / "wa.json").read_text())
     finally:
         store.close()
 
@@ -65,7 +65,7 @@ print(json.dumps({
   assert.deepEqual(JSON.parse(output), {
     entryCount: 2,
     shardCount: 1,
-    files: ["w.json"],
+    files: ["wa.json"],
     walkKind: "standalone",
     walkedKind: "alias",
   });

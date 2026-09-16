@@ -2,7 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { getDictDir, getShardPath } = require('./dict-path')
+const { getDictDir, loadLetterShard } = require('./dict-path')
 
 function toLegacyRelation(edge) {
   return {
@@ -78,9 +78,8 @@ function decorateEntry(entry, allEntries) {
   return entry
 }
 
-function loadShard(char) {
-  const dictPath = getShardPath(char)
-  const shard = JSON.parse(fs.readFileSync(dictPath, 'utf8'))
+function loadShard(letter) {
+  const shard = loadLetterShard(letter)
   const allEntries = loadAllEntries()
   for (const entry of Object.values(shard)) {
     decorateEntry(entry, allEntries)
