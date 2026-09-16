@@ -27,13 +27,17 @@ Bob 牛津高阶英汉双解词典插件（OALD 10th Edition）。
 - `scripts/`：正式构建脚本与数据流水线
 - `scripts/archive/`：历史实验脚本与已退出主流程的工具
 - `tests/`：运行时与数据流水线回归测试
-- `data/sources/`：词库源文件约定位置（私有 OALD、ECDICT 原始数据）
-- `data/build/`：构建中间态（推荐承载 SQLite 状态库）
-- `data/packs/`：处理后的外部数据包目录
-- `docs/`：维护文档与结构说明
-- `env/`：环境依赖与环境模板
+- `env/`：Python 依赖清单（`requirements-oald.txt`）
+- `docs/`：架构图等维护产物
 - `dist/`：当前工作区的临时构建产物（`main.js`、临时 `.bobplugin`）
-- `release/`：历史版本与最终发布用 `.bobplugin` 文件
+- `release/`：最终发布用 `.bobplugin` 文件
+
+以下目录**不随仓库分发**（均在 `.gitignore` 中，全新 clone 不会存在），需要自行创建或由构建生成：
+
+- `.cache/oald-build/`：数据构建的工作目录，SQLite 状态库与构建输出都在这里
+- `data/sources/`：词库源文件位置（私有 OALD、ECDICT 原始数据）
+- `data/packs/`：可选的外部数据包位置；存在时优先于构建输出被读取
+- `dict/`：历史离线词典目录，仅作迁移期兼容
 
 ## 目录职责
 
@@ -41,16 +45,14 @@ Bob 牛津高阶英汉双解词典插件（OALD 10th Edition）。
 
 - `data/sources/`
   - 数据库源文件 / 原始词库
-- `data/build/`
-  - 构建中间态
+- `.cache/oald-build/`
+  - 构建工作目录与中间态（SQLite 状态库、构建输出）
 - `data/packs/`
-  - 处理后的可读外部数据包
+  - 可选的外部数据包；存在时优先被读取
 - `apps/bob-plugin/`
   - 插件代码与应用级构建脚本
 - `env/`
-  - 环境依赖
-- `docs/`
-  - 维护文档
+  - Python 依赖清单
 - `release/`
   - 最终插件归档
 - `dist/`
@@ -64,7 +66,7 @@ Bob 牛津高阶英汉双解词典插件（OALD 10th Edition）。
 
 ## 推荐的数据包布局
 
-推荐把词库单独维护成外部数据包，目录约定如下：
+词库作为独立的外部数据包维护。若使用 `data/packs/` 作为外部数据包目录，布局约定如下：
 
 ```text
 data/packs/
@@ -142,9 +144,9 @@ npm run release:publish -- --notes "更新说明"  # 3. 创建 GitHub Release �
 
 从 `v5.6.x` 起，项目将离线词典数据视为**构建产物 / 外部数据包**，而不是日常源码的一部分。
 
-- 优先外部数据包目录：`data/packs/oald/2024.09/dict`
-- 构建工作目录：`data/build/oald/`（推荐形态）
-- 当前默认构建输出：`.cache/oald-build/output/packs/oald/2024.09/`
+- 默认构建工作目录：`.cache/oald-build/`
+- 默认构建输出：`.cache/oald-build/output/packs/oald/2024.09/`
+- 可选外部数据包目录：`data/packs/oald/2024.09/dict`（若存在则优先于构建输出被读取）
 - 构建清单：`manifest.json`
 - 迁移期兼容：旧 `dict/` 目录仍可被识别，但不再作为推荐使用方式
 
