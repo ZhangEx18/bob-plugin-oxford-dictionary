@@ -46,7 +46,10 @@ test('abbreviation entries with trailing dot resolve correctly', () => {
     assert.ok(entry.word.toLowerCase().includes('.'),
       `abbreviation "${abbrev}" word should contain dot`)
   }
-  assert.ok(found >= 0, `found ${found} known abbreviations`)
+  // Every known abbreviation is present today, so assert the full set. The old
+  // `found >= 0` was vacuously true and never caught a dropped entry.
+  assert.equal(found, knownAbbrevs.length,
+    `expected all ${knownAbbrevs.length} known abbreviations, found ${found}`)
 })
 
 // ---------------------------------------------------------------------------
