@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { runTranslate, loadRuntime } = require('./_runtime')
-const { loadLetterShard, loadWordShard, shardKeyForWord } = require('./dict-path')
+const { getDictDir, loadLetterShard, loadWordShard, shardKeyForWord } = require('./dict-path')
 const DISPLAY_SEPARATOR = '\u00A0'
 
 function loadShard(letter) {
@@ -681,6 +681,47 @@ test('normalization aliases link to their canonical spelling', async () => {
       [{ name: '原形', words: [canonical] }],
       `${word} should link to ${canonical}`,
     )
+  }
+})
+
+test('content-less entries that expand into origin sources still resolve offline', async () => {
+  // Inflections like "traveled" carry no definition text of their own and
+  // render from their origin sources instead (travel 的过去式 / 过去分词). A miss
+  // guard introduced for pointer-only aliases rejected exactly this case, and
+  // 12 entries silently fell through to the network. The set is derived from
+  // the pack so it stays honest if the data changes.
+  const targets = []
+  for (const file of fs.readdirSync(getDictDir())) {
+    if (!file.endsWith('.json')) continue
+    const shard = JSON.parse(fs.readFileSync(path.join(getDictDir(), file), 'utf8'))
+    for (const [word, entry] of Object.entries(shard)) {
+      const hasContent = (entry.translation || '').trim() !== ''
+        || (entry.translation_parts || []).length > 0
+      if (hasContent) continue
+      const labels = new Set(
+        (entry.relations || [])
+          .filter((edge) => edge.type === 'origin' && edge.direction === 'outgoing' && edge.navigable)
+          .map((edge) => edge.label),
+      )
+      if (labels.size > 1) targets.push(word)
+    }
+  }
+
+  assert.ok(targets.length > 0, 'expected the pack to contain expanding content-less entries')
+  assert.ok(targets.includes('traveled'), `traveled should be covered, got: ${targets.slice(0, 5)}`)
+
+  const runtime = await loadRuntime()
+  const query = (text) => new Promise((resolve, reject) => {
+    runtime.translate({ text, detectFrom: 'en', detectTo: 'zh-Hans' }, (payload) => {
+      if (payload.error) reject(new Error(`${text} failed: ${payload.error.type}`))
+      else resolve(payload.result)
+    })
+  })
+
+  for (const word of targets) {
+    const result = await query(word)
+    assert.equal(result.raw.provider, 'oald', `${word} should resolve offline`)
+    assert.ok(result.toDict.parts.length > 0, `${word} should render its origin sources`)
   }
 })
 
