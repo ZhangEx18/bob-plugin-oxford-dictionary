@@ -2,6 +2,13 @@
   "identifier": "com.oald.dictionary",
   "versions": [
     {
+      "version": "8.5.0",
+      "desc": "alias 条目改为纯指针，包体 32.4 MB -> 13.5 MB，数据 422 MB -> 138 MB。alias 是跳转条目，此前把目标词内容整段复制了一份（461,184 条，占数据体积 80%），而运行时只通过 linked_word/display_word 解析目标、不读取 alias 自身字段，副本纯属冗余。同时修复 2,359 个 display_word 指向自身的 alias（如 a-lines 的 display_word 是 a-lines、linked_word 才是 a-line），此前靠自带副本掩盖，指针化后会渲染为空。查词行为不变。",
+      "sha256": "46a95be88f3a42ca290e8165452e28bbe6118e4ca74b59d072b807727c8ba69a",
+      "url": "https://github.com/ZhangEx18/bob-plugin-oxford-dictionary/releases/download/v8.5.0/bob-plugin-oald-dictionary8.5.0.bobplugin",
+      "minBobVersion": "1.0.0"
+    },
+    {
       "version": "8.4.5",
       "desc": "修复跳转词条（alias）的两处缺陷：① 同一查询的结果会随会话中已加载的分片而变化——a-man 在 m.json 未加载时显示\"复数:men\"，加载后变为空；② alias 会展示从目标词整段复制的词形变化（146,506 条与目标逐字节相同），等于在 a-man 名下展示 man 的变形。现在 alias 统一且确定地只显示一行回链：a-man -> 原形:man、café -> 原形:cafe、etc. -> 原形:etc。同时移除与分片缓存并存的 entryCache，它自带淘汰策略、可能持有同一词的陈旧实例而破坏对象身份缓存；分片键完整性改由不变量测试保障。",
       "sha256": "d0ab39ca97e4f7e4406e1d28b40daaab42ef2c985487dc3ead98d81862ac3df5",
