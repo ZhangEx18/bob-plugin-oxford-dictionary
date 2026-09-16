@@ -2,7 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { runTranslate } = require('./_runtime')
+const { runTranslate, loadRuntime } = require('./_runtime')
 const { getShardPath } = require('./dict-path')
 const DISPLAY_SEPARATOR = '\u00A0'
 
@@ -650,6 +650,61 @@ test('non-Chinese target skips the Chinese offline pack and translates', async (
   assert.equal(result.raw.provider, 'youdao-translate')
   assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), ['スクリプト'])
   assert.equal(result.to, 'ja')
+})
+
+test('alias entries expose the canonical form, not the target morphology', async () => {
+  // Alias entries copy their target's exchange string verbatim (146,506 of them
+  // match their target byte for byte), so rendering it showed another word's
+  // inflections under this word's name: "a-man" displayed men / manned / manning.
+  const result = await runTranslate('a-man')
+
+  assert.equal(result.raw.provider, 'oald')
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toDict.exchanges)), [
+    { name: '原形', words: ['man'] },
+  ])
+  assert.ok(
+    !JSON.stringify(result.toDict.exchanges).includes('men'),
+    'a-man must not display the plural of man',
+  )
+})
+
+test('normalization aliases link to their canonical spelling', async () => {
+  const cases = [
+    ['café', 'cafe'],   // accent folding
+    ['etc.', 'etc'],    // trailing-dot folding
+  ]
+
+  for (const [word, canonical] of cases) {
+    const result = await runTranslate(word)
+    assert.equal(result.raw.provider, 'oald', `${word} should resolve offline`)
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(result.toDict.exchanges)),
+      [{ name: '原形', words: [canonical] }],
+      `${word} should link to ${canonical}`,
+    )
+  }
+})
+
+test('alias resolution does not depend on which shards loaded earlier', async () => {
+  // Regression: display resolution read a global entry pool instead of loading
+  // the target's shard, so the answer depended on session history. a-man's
+  // target lives in m.json; resolving it cold and after m.json is warm must
+  // agree.
+  const runtime = await loadRuntime()
+  const query = (text) => new Promise((resolve, reject) => {
+    runtime.translate({ text, detectFrom: 'en', detectTo: 'zh-Hans' }, (payload) => {
+      if (payload.error) reject(new Error(payload.error.type))
+      else resolve(payload.result)
+    })
+  })
+  const shape = (result) => JSON.parse(JSON.stringify(result.toDict.exchanges))
+
+  const cold = await query('a-man')
+  await query('man') // loads m.json into the shared caches
+  const warm = await query('a-man')
+
+  assert.deepEqual(shape(cold), [{ name: '原形', words: ['man'] }])
+  assert.deepEqual(shape(warm), shape(cold), 'cold and warm resolution must match')
 })
 
 test('batch homographs with multiple POS render all parts at runtime', async () => {
