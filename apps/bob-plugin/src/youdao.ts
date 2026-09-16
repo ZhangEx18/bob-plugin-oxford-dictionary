@@ -56,16 +56,28 @@ function toYoudaoLang(lang: string | undefined, fallback: string): string {
   return youdaoLangMap[lang] || fallback;
 }
 
+/**
+ * Whether `text` is a single token that could address an offline headword.
+ *
+ * The offline dictionary also holds contractions (don't, can't), accented
+ * loanwords (café, naïve) and abbreviations (etc., e.g.), so the character
+ * class must accept apostrophes, Latin letters with combining marks, dots and
+ * hyphens. Requiring at least one letter deliberately keeps numeric input
+ * (3.14), CJK input (你好) and multi-word input on the direct translation
+ * route, which is where they belong.
+ */
+const WORD_QUERY_PATTERN = /^(?=.*[\p{Script=Latin}\p{M}])[\p{Script=Latin}\p{M}'’.-]+$/u;
+
 function isWordQuery(text: string): boolean {
-  return /^[a-zA-Z-]+$/.test(text.trim());
+  return WORD_QUERY_PATTERN.test(text.trim());
 }
 
 function normalizePunctuationForChinese(text: string): string {
   return text
     // 单词末尾或独立撇号转为中文右单引号；先处理带前导字母的情况，再处理剩余撇号
     .replace(/(\w)'/g, "$1’").replace(/'/g, "’")
-    // 同理处理双引号
-    .replace(/(\w)"/g, "$1\"\"").replace(/"/g, "\"\"")
+    // 同理处理双引号：转成中文右双引号，而不是把每个引号翻倍
+    .replace(/"/g, "”")
     .replace(/!/g, "！")
     .replace(/\?/g, "？")
     .replace(/,/g, "，")
