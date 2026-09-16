@@ -284,6 +284,44 @@ test('every entry is stored in the shard the runtime derives for it', async () =
 })
 
 // ---------------------------------------------------------------------------
+// Renderability invariant
+// ---------------------------------------------------------------------------
+
+test('every router-acceptable entry is renderable', async () => {
+  // The pack exists to answer offline lookups, so any entry the router accepts
+  // must produce a view. This covers the whole class of "entry present but the
+  // runtime rejects it" bugs, which the query-driven tests miss because they
+  // only touch the words they happen to name: a miss guard added for
+  // pointer-only aliases once rejected 12 inflections that render from origin
+  // sources (traveled, lines, focussed, ...) and nothing failed.
+  const runtime = await loadRuntime()
+  const surface = runtime.__querySurfaceForTests
+  assert.ok(surface, 'runtime must expose __querySurfaceForTests')
+
+  const dictDir = getDictDir()
+  const failures = []
+  let checked = 0
+
+  for (const file of fs.readdirSync(dictDir)) {
+    if (!file.endsWith('.json')) continue
+    const shard = JSON.parse(fs.readFileSync(path.join(dictDir, file), 'utf8'))
+    for (const word of Object.keys(shard)) {
+      if (!surface.isWordQuery(word)) continue
+      checked += 1
+      if (!surface.buildEntryView(word)) {
+        failures.push(word)
+        if (failures.length >= 10) break
+      }
+    }
+    if (failures.length >= 10) break
+  }
+
+  assert.ok(checked > 100000, `expected a large candidate set, checked only ${checked}`)
+  assert.equal(failures.length, 0,
+    `${failures.length} entries are accepted by the router but not renderable: ${JSON.stringify(failures.slice(0, 5))}`)
+})
+
+// ---------------------------------------------------------------------------
 // Exchange / morphology format invariants
 // ---------------------------------------------------------------------------
 
