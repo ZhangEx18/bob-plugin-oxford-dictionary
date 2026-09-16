@@ -8,7 +8,7 @@
     "lint": "npm run lint --workspace bob-plugin-oald-dictionary",
     "test": "node --test tests/*.test.js",
     "test:fast": "node --test tests/pure-functions.test.js tests/edge-cases.test.js tests/abbreviation-phrasal.test.js tests/artifact-paths.test.js tests/oald-pipeline-core.test.js tests/oald-pipeline-integration.test.js tests/release-validation.test.js tests/release-appcast.test.js",
-    "test:ci": "node --test tests/artifact-paths.test.js tests/cgel-irregular-verbs.test.js tests/pure-functions.test.js tests/release-appcast.test.js tests/release-validation.test.js",
+    "test:ci": "node --test tests/artifact-paths.test.js tests/cgel-irregular-verbs.test.js tests/pure-functions.test.js tests/release-appcast.test.js tests/release-validation.test.js tests/youdao-routing.test.js",
     "build": "npm run build --workspace bob-plugin-oald-dictionary",
     "dev": "npm run dev --workspace bob-plugin-oald-dictionary",
     "build:release": "npm run build:release --workspace bob-plugin-oald-dictionary",

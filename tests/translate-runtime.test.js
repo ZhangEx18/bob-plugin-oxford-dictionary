@@ -597,6 +597,61 @@ test('batch protected homographs render cross-references at runtime', async () =
   }
 })
 
+test('contractions, accented words and abbreviations resolve offline', async () => {
+  // The offline dictionary holds these forms, so a single-token query must reach
+  // it instead of falling through to Youdao. A regression here silently costs
+  // offline coverage rather than raising an error.
+  const cases = [
+    ["don't", 'short.'],
+    ["can't", 'short.'],
+    ["o'clock", 'adv.'],
+    ['café', 'n.'],
+    ['naïve', 'adj.'],
+    ['etc.', 'abbr.'],
+    ['Mr.', 'abbr.'],
+    ['co-operate', 'v.'],
+  ]
+
+  for (const [word, expectedPos] of cases) {
+    const result = await runTranslate(word)
+    assert.equal(result.raw.provider, 'oald', `${word} should resolve offline, got ${result.raw.provider}`)
+    const partNames = result.toDict.parts.map((part) => part.part)
+    assert.ok(
+      partNames.includes(expectedPos),
+      `${word} should render ${expectedPos}, got: ${JSON.stringify(partNames)}`,
+    )
+  }
+})
+
+test('Chinese target still uses the offline OALD dictionary', async () => {
+  for (const detectTo of ['zh-Hans', 'zh-Hant']) {
+    const result = await runTranslate('script', { detectTo })
+    assert.equal(result.raw.provider, 'oald', `detectTo=${detectTo} should stay offline`)
+    // The pack is Simplified Chinese, so it reports zh-Hans rather than echoing
+    // the requested variant.
+    assert.equal(result.to, 'zh-Hans')
+  }
+})
+
+test('non-Chinese target skips the Chinese offline pack and translates', async () => {
+  const result = await runTranslate('script', {
+    detectTo: 'ja',
+    overrides: {
+      $httpMocks: [
+        {
+          method: 'POST',
+          url: 'https://aidemo.youdao.com/trans',
+          response: { errorCode: '0', translation: ['スクリプト'] },
+        },
+      ],
+    },
+  })
+
+  assert.equal(result.raw.provider, 'youdao-translate')
+  assert.deepEqual(JSON.parse(JSON.stringify(result.toParagraphs)), ['スクリプト'])
+  assert.equal(result.to, 'ja')
+})
+
 test('batch homographs with multiple POS render all parts at runtime', async () => {
   const cases = [
     { word: 'spring', expectedParts: ['n.', 'v.'] },
