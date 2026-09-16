@@ -6,6 +6,9 @@ dist/
 *.py[cod]
 .omc/
 .omo/
+# Auto-generated session memory (claude-mem). CLAUDE.md is the tracked source of
+# architecture guidance; this file is rewritten by tooling and goes stale.
+AGENTS.md
 release/*.bobplugin
 dict/
 .cache/
