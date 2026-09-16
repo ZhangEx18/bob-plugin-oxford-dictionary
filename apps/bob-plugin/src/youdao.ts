@@ -196,19 +196,107 @@ function unwrapResponseBody(responseBody: unknown): unknown {
   return typeof toString === "function" ? toString.call(responseBody) : responseBody;
 }
 
-function requestJson(
+/**
+ * The endpoint answers "请求频率过快" with this code once the caller exceeds its
+ * budget. Measured against the live service: six requests are served, then
+ * every request is refused for about thirty seconds. The code arrives as a
+ * number while a successful response carries "0" as a string, so both
+ * representations are normalised before comparing.
+ */
+const RATE_LIMIT_ERROR_CODE = "411";
+
+/**
+ * Requests the endpoint serves before it starts refusing, and how long the
+ * refusal lasts. Measured, not documented: six requests succeed, a seventh is
+ * refused, and the budget returns roughly thirty seconds after the burst.
+ */
+const RATE_LIMIT_BURST = 6;
+const RATE_LIMIT_WINDOW_MS = 30000;
+
+/**
+ * Wait for a free request slot instead of discovering the limit by being
+ * refused.
+ *
+ * Retrying after a refusal does not work: a refused request still counts, so
+ * the attempts keep the window saturated. Measured behaviour was that three
+ * backoffs of 3s, 8s and 15s all came back 411 and the translation still
+ * failed. Pacing requests so the budget is never exhausted is the only
+ * approach that lets a long translation finish.
+ *
+ * This matters because the endpoint rejects a single request above roughly
+ * 1,000 characters, so long text is sent in 900-character segments and would
+ * otherwise be refused from the seventh segment onward.
+ */
+const requestTimestamps: number[] = [];
+
+async function awaitRateLimitSlot(): Promise<void> {
+  for (;;) {
+    const now = Date.now();
+    while (requestTimestamps.length > 0 && now - requestTimestamps[0] >= RATE_LIMIT_WINDOW_MS) {
+      requestTimestamps.shift();
+    }
+    if (requestTimestamps.length < RATE_LIMIT_BURST) {
+      requestTimestamps.push(now);
+      return;
+    }
+    const waitMs = RATE_LIMIT_WINDOW_MS - (now - requestTimestamps[0]);
+    await sleep(Math.max(1, Math.ceil(waitMs / 1000)));
+  }
+}
+
+/**
+ * The endpoint is inconsistent about the type of `errorCode`: a successful
+ * response reports the string "0" while the rate-limit response reports the
+ * number 411. Comparing against only one representation silently disabled the
+ * retry, so both are accepted here.
+ */
+function isRateLimited(response: unknown): boolean {
+  if (!response || typeof response !== "object") return false;
+  const code = (response as { errorCode?: unknown }).errorCode;
+  return code !== undefined && code !== null && String(code) === RATE_LIMIT_ERROR_CODE;
+}
+
+/** `$timer` is the only delay primitive; its interval is in whole seconds. */
+function sleep(seconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    $timer.schedule({ interval: seconds, repeats: false, handler: () => resolve() });
+  });
+}
+
+async function requestJson(
   options: {
     method: string;
     url: string;
     header?: Record<string, string>;
     body?: Record<string, string>;
+    cancelSignal?: unknown;
   },
 ): Promise<unknown | null> {
-  return new Promise((resolve) => {
+  await awaitRateLimitSlot();
+
+  const response = await new Promise<unknown | null>((resolve) => {
     $http.request({
       ...options,
       handler(resp) {
         // Bob 在 JSON 响应下通常会直接给对象；测试桥接里则可能是一个只带 toString 的包装对象。
+        resolve(normalizeResponseData(unwrapResponseBody(resp.data as unknown)));
+      },
+    });
+  });
+
+  if (!isRateLimited(response)) {
+    return response;
+  }
+
+  // Should not happen once pacing is in place, but another client sharing the
+  // address can still consume the budget. One wait for a full window is enough
+  // to clear a refusal; more attempts only burn the slot that just freed up.
+  await sleep(30);
+  await awaitRateLimitSlot();
+  return new Promise<unknown | null>((resolve) => {
+    $http.request({
+      ...options,
+      handler(resp) {
         resolve(normalizeResponseData(unwrapResponseBody(resp.data as unknown)));
       },
     });

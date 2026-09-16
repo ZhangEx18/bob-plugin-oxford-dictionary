@@ -1,6 +1,5 @@
 import * as Bob from "@bob-plug/core";
 import { EcdictEntry } from "./types";
-import { queryEcdictEntry } from "./ecdict-loader";
 
 /**
  * Parses an ECDICT exchange string into Bob ExchangeObject array.
