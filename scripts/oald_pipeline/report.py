@@ -27,7 +27,7 @@ def summarize_entries(entries: dict[str, dict[str, Any]]) -> dict[str, Any]:
             if relation.get("navigable") and relation.get("target", "").lower() not in entries:
                 dangling_targets += 1
 
-    shard_chars = sorted({shard_key_for_word(key) for key in entries.keys()})
+    shard_keys = sorted({shard_key_for_word(key) for key in entries.keys()})
     return {
         "entryCount": len(entries),
         "counts": counts,
@@ -35,6 +35,6 @@ def summarize_entries(entries: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "syntheticRelationCount": synthetic_relations,
         "wordFamilyMissingCount": word_family_missing,
         "verbFormMissingCount": verb_form_missing,
-        "shardCount": len(shard_chars),
-        "shards": shard_chars,
+        "shardCount": len(shard_keys),
+        "shards": shard_keys,
     }

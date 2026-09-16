@@ -9,7 +9,7 @@ from typing import Any
 
 from .config import DATA_VERSION, PIPELINE_VERSION, SCHEMA_VERSION
 from .models import BuildContext
-from .shard_writer import strip_alias_payload, write_shards
+from .shard_writer import SHARD_KEY_LENGTH, strip_alias_payload, write_shards
 from .state import StateStore
 
 
@@ -47,6 +47,7 @@ def emit_manifest(context: BuildContext, summary: dict[str, Any]) -> dict[str, A
         "layout": {
             "shardSubdir": "dict",
             "shardExtension": ".json",
+            "shardKeyLength": SHARD_KEY_LENGTH,
         },
         "files": [
             {"name": file.name, "sha256": compute_sha256(file), "size": file.stat().st_size}
