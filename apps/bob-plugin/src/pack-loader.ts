@@ -21,9 +21,6 @@ const PACK_LOCATORS: Record<PackType, PackLocator[]> = {
   ecdict: [
     { rootDir: "packs/ecdict/latest", manifestPath: "packs/ecdict/latest/manifest.json" },
   ],
-  roots: [
-    { rootDir: "packs/roots/latest", manifestPath: "packs/roots/latest/manifest.json" },
-  ],
 };
 
 const manifestCache = new Map<PackType, ResolvedPack | null>();
@@ -63,7 +60,7 @@ export function resolvePack(packType: PackType): ResolvedPack | null {
       continue;
     }
 
-    const shardSubdir = manifestData.layout?.shardSubdir || (packType === "roots" ? "words" : "dict");
+    const shardSubdir = manifestData.layout?.shardSubdir || "dict";
     const shardExtension = manifestData.layout?.shardExtension || ".json";
     const resolved = {
       manifest: manifestData,

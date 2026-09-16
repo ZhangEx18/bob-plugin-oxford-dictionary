@@ -10,7 +10,6 @@ const workspaceLock = require(path.join(WORKSPACE_ROOT, "package-lock.json"));
 const {
   resolveDictDir,
   resolveManifestPath,
-  resolveRootsDir,
 } = require(path.join(WORKSPACE_ROOT, "scripts", "artifact_paths.js"));
 const {
   validateSourcePack,
@@ -57,20 +56,6 @@ fs.mkdirSync(path.dirname(ARTIFACT_PATH), { recursive: true });
 
 const dictDir = resolveDictDir();
 const manifestPath = resolveManifestPath();
-const rootsDir = resolveRootsDir();
-const rootsManifestPath = path.join(rootsDir, "..", "manifest.json");
-const rootsCsvDir = path.resolve(WORKSPACE_ROOT, "./.cache/oald-build/output/packs/roots-csv/latest/words");
-const rootsCsvManifestPath = path.resolve(WORKSPACE_ROOT, "./.cache/oald-build/output/packs/roots-csv/latest/manifest.json");
-
-function validateOptionalRootsCsvPack() {
-  if (!fs.existsSync(rootsCsvDir) && !fs.existsSync(rootsCsvManifestPath)) return null;
-  return validateSourcePack({
-    manifestPath: rootsCsvManifestPath,
-    shardDir: rootsCsvDir,
-    packType: "roots",
-    shardSubdir: "words",
-  });
-}
 
 const releasePacks = isRelease
   ? {
@@ -80,13 +65,6 @@ const releasePacks = isRelease
         packType: "oald",
         shardSubdir: "dict",
       }),
-      roots: validateSourcePack({
-        manifestPath: rootsManifestPath,
-        shardDir: rootsDir,
-        packType: "roots",
-        shardSubdir: "words",
-      }),
-      rootsCsv: validateOptionalRootsCsvPack(),
     }
   : null;
 
@@ -120,30 +98,12 @@ function addDictionaryPacks(zip) {
     zipRoot: "packs/oald/2024.09",
     shardSubdir: "dict",
   });
-  addPack(zip, {
-    shardDir: rootsDir,
-    manifestFile: rootsManifestPath,
-    declaredFiles: releasePacks?.roots.files,
-    zipRoot: "packs/roots/latest",
-    shardSubdir: "words",
-  });
-}
-
-function addRootsSupplement(zip) {
-  addPack(zip, {
-    shardDir: rootsCsvDir,
-    manifestFile: rootsCsvManifestPath,
-    declaredFiles: releasePacks?.rootsCsv?.files,
-    zipRoot: "packs/roots-csv/latest",
-    shardSubdir: "words",
-  });
 }
 
 const createZip = () => {
   const zip = new AdmZip();
   addPluginAssets(zip);
   addDictionaryPacks(zip);
-  addRootsSupplement(zip);
   const outputPath = isRelease ? ARTIFACT_PATH : path.resolve(WORKSPACE_ROOT, `./dist/${PLUGIN_NAME}`);
   zip.writeZip(outputPath);
   if (isRelease) verifyReleaseArtifact(outputPath, version);
