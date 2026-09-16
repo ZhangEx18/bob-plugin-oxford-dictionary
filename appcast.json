@@ -2,6 +2,13 @@
   "identifier": "com.oald.dictionary",
   "versions": [
     {
+      "version": "8.6.0",
+      "desc": "分片改为双字母键：按词条前两个字符切分，分片数 92 -> 1,020。实测同样 32 次查询（跨 26 个首字母），解析后堆占用从 376 MB 降到 81 MB（-78%），单次查询最坏解析从 65ms 降到 46ms。分片键对非 [a-z0-9] 字符做 ~ + 六位码点转义（避免 s/ 这类含路径分隔符的前缀），并先做 NFC 归一化（避免 APFS 折叠冲突）。manifest.layout 新增 shardKeyLength；未声明该字段的旧数据包仍按原单字母方案读取。",
+      "sha256": "aa6b8992630e88d69d9dcf720878723a90a60cac0b553efc3e762731e7fef945",
+      "url": "https://github.com/ZhangEx18/bob-plugin-oxford-dictionary/releases/download/v8.6.0/bob-plugin-oald-dictionary8.6.0.bobplugin",
+      "minBobVersion": "1.0.0"
+    },
+    {
       "version": "8.5.0",
       "desc": "alias 条目改为纯指针，包体 32.4 MB -> 13.5 MB，数据 422 MB -> 138 MB。alias 是跳转条目，此前把目标词内容整段复制了一份（461,184 条，占数据体积 80%），而运行时只通过 linked_word/display_word 解析目标、不读取 alias 自身字段，副本纯属冗余。同时修复 2,359 个 display_word 指向自身的 alias（如 a-lines 的 display_word 是 a-lines、linked_word 才是 a-line），此前靠自带副本掩盖，指针化后会渲染为空。查词行为不变。",
       "sha256": "46a95be88f3a42ca290e8165452e28bbe6118e4ca74b59d072b807727c8ba69a",
