@@ -12,6 +12,7 @@ interface ResolvedPack {
   rootDir: string;
   shardSubdir: string;
   shardExtension: string;
+  shardKeyLength: number;
 }
 
 const PACK_LOCATORS: Record<PackType, PackLocator[]> = {
@@ -62,11 +63,16 @@ export function resolvePack(packType: PackType): ResolvedPack | null {
 
     const shardSubdir = manifestData.layout?.shardSubdir || "dict";
     const shardExtension = manifestData.layout?.shardExtension || ".json";
+    const declaredKeyLength = manifestData.layout?.shardKeyLength;
+    const shardKeyLength = typeof declaredKeyLength === "number" && declaredKeyLength > 0
+      ? Math.floor(declaredKeyLength)
+      : 1;
     const resolved = {
       manifest: manifestData,
       rootDir: locator.rootDir,
       shardSubdir,
       shardExtension,
+      shardKeyLength,
     };
     manifestCache.set(packType, resolved);
     return resolved;
@@ -76,11 +82,20 @@ export function resolvePack(packType: PackType): ResolvedPack | null {
   return null;
 }
 
-export function loadPackShard<T>(packType: PackType, char: string): T | null {
+/** Whether the pack declares a shard key length instead of the legacy raw key. */
+export function hasDeclaredShardKeyLength(packType: PackType): boolean {
+  return typeof resolvePack(packType)?.manifest.layout?.shardKeyLength === "number";
+}
+
+export function getShardKeyLength(packType: PackType): number {
+  return resolvePack(packType)?.shardKeyLength ?? 1;
+}
+
+export function loadPackShard<T>(packType: PackType, shardKey: string): T | null {
   const resolved = resolvePack(packType);
   if (!resolved) return null;
 
-  const filename = `${char}${resolved.shardExtension}`;
+  const filename = `${shardKey}${resolved.shardExtension}`;
   const relativePath = `${resolved.rootDir}/${resolved.shardSubdir}/${filename}`;
   const modern = readJson(relativePath);
   return modern ? (modern as T) : null;
