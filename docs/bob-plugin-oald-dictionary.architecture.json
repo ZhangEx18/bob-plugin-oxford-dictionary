@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Bob 牛津词典插件：运行时与数据构建架构",
+    "locale": "zh-CN",
+    "output": "docs/bob-plugin-oald-dictionary.architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/ZhangEx18/bob-plugin-oxford-dictionary",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "e287aaefe244554f48b21fb69b4c7f058e6963b1"
+    },
+    "views": [
+      {
+        "id": "query-path",
+        "label": "查询触发路径",
+        "focus": ["bob", "runtime", "packs", "youdao"],
+        "note": "从 Bob 发起查询，优先读取离线词库，未命中时走有道 fallback。"
+      },
+      {
+        "id": "data-pipeline",
+        "label": "数据构建路径",
+        "focus": ["sources", "pipeline", "packs", "builder"],
+        "note": "从原始词库经过 extract、normalize、relate、emit 生成可读取的数据包。"
+      },
+      {
+        "id": "release-path",
+        "label": "发布路径",
+        "focus": ["packs", "builder", "tests", "release"],
+        "note": "构建脚本装入数据包，经过质量检查后产出 .bobplugin。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "bob",
+      "type": "external",
+      "label": "Bob 宿主",
+      "sublabel": "macOS 翻译客户端",
+      "tag": "查询入口",
+      "sources": [{ "path": "README.md", "line": 98, "end_line": 103, "label": "安装与使用" }],
+      "pos": [40, 170],
+      "size": [150, 70]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "插件运行时",
+      "sublabel": "apps/bob-plugin/src",
+      "tag": "TypeScript",
+      "sources": [
+        { "path": "apps/bob-plugin/src/translate.ts", "label": "查询分流" },
+        { "path": "apps/bob-plugin/src/entry-view.ts", "label": "结果视图" },
+        { "path": "apps/bob-plugin/src/data-loader.ts", "label": "分片加载" }
+      ],
+      "pos": [270, 170],
+      "size": [190, 70]
+    },
+    {
+      "id": "packs",
+      "type": "database",
+      "label": "离线词库包",
+      "sublabel": "OALD / ECDICT",
+      "tag": "shard + manifest",
+      "sources": [
+        { "path": "README.md", "line": 67, "end_line": 96, "label": "数据包布局" },
+        { "path": "apps/bob-plugin/src/data-loader.ts", "label": "分片加载" }
+      ],
+      "pos": [540, 170],
+      "size": [210, 80]
+    },
+    {
+      "id": "youdao",
+      "type": "external",
+      "label": "有道服务",
+      "sublabel": "在线 fallback / 长文本翻译",
+      "tag": "网络依赖",
+      "sources": [{ "path": "apps/bob-plugin/src/youdao.ts", "label": "有道请求" }],
+      "pos": [810, 70],
+      "size": [190, 70]
+    },
+    {
+      "id": "sources",
+      "type": "external",
+      "label": "原始词库源",
+      "sublabel": "MDX / CSV",
+      "tag": "构建输入",
+      "sources": [
+        { "path": "README.md", "line": 143, "end_line": 150, "label": "数据源与产物治理" },
+        { "path": "env/requirements-oald.txt", "label": "Python 依赖" }
+      ],
+      "pos": [40, 500],
+      "size": [190, 70]
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "词库数据流水线",
+      "sublabel": "scripts/build_oald_data.py",
+      "tag": "extract → emit",
+      "sources": [
+        { "path": "scripts/build_oald_data.py", "line": 1, "label": "统一入口" },
+        { "path": "scripts/oald_pipeline/normalize.py", "label": "分阶段实现" }
+      ],
+      "pos": [290, 500],
+      "size": [210, 70]
+    },
+    {
+      "id": "builder",
+      "type": "backend",
+      "label": "插件构建器",
+      "sublabel": "apps/bob-plugin/build.js",
+      "tag": "bundle assets",
+      "sources": [{ "path": "apps/bob-plugin/build.js", "label": "打包入口" }],
+      "pos": [560, 500],
+      "size": [190, 70]
+    },
+    {
+      "id": "tests",
+      "type": "security",
+      "label": "测试与质量门",
+      "sublabel": "runtime / pipeline / release",
+      "tag": "校验",
+      "sources": [{ "path": "tests/translate-runtime.test.js", "label": "运行时回归测试" }],
+      "pos": [810, 500],
+      "size": [190, 70]
+    },
+    {
+      "id": "release",
+      "type": "external",
+      "label": "Bob 插件产物",
+      "sublabel": ".bobplugin",
+      "tag": "dist / release",
+      "sources": [
+        { "path": "README.md", "line": 24, "end_line": 40, "label": "仓库结构" },
+        { "path": "apps/bob-plugin/build.js", "label": "打包产物" }
+      ],
+      "pos": [1050, 500],
+      "size": [160, 70]
+    }
+  ],
+  "connections": [
+    { "id": "bob-query", "from": "bob", "to": "runtime", "label": "翻译查询", "variant": "emphasis" },
+    { "id": "runtime-offline", "from": "runtime", "to": "packs", "label": "优先本地查词", "variant": "emphasis" },
+    { "id": "runtime-youdao", "from": "runtime", "to": "youdao", "label": "未命中 / 长文本", "variant": "dashed", "fromSide": "top", "toSide": "left" },
+    { "id": "source-pipeline", "from": "sources", "to": "pipeline", "label": "原始数据", "variant": "emphasis" },
+    { "id": "pipeline-packs", "from": "pipeline", "to": "packs", "label": "extract / normalize / relate / emit", "fromSide": "top", "toSide": "bottom" },
+    { "id": "packs-builder", "from": "packs", "to": "builder", "label": "装入插件资源", "fromSide": "bottom", "toSide": "top", "labelDx": 90, "labelDy": 24 },
+    { "id": "builder-tests", "from": "builder", "to": "tests", "label": "构建后校验", "variant": "security" },
+    { "id": "tests-release", "from": "tests", "to": "release", "label": "通过后发布", "variant": "emphasis", "labelDy": -29 }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "运行时",
+      "items": [
+        "Bob 查询先进入 apps/bob-plugin/src/translate.ts",
+        "OALD、ECDICT 通过分片数据包离线读取",
+        "有道只承担未收录单词和多语言翻译 fallback"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "数据构建",
+      "items": [
+        "scripts/build_oald_data.py 是 OALD 数据构建入口",
+        "流水线按 extract、normalize、relate、emit 分阶段执行",
+        "最终输出 dict/*.json 与 manifest.json"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "发布",
+      "items": [
+        "apps/bob-plugin/build.js 负责打包插件和数据资源",
+        "tests/ 覆盖运行时、流水线和发布校验",
+        "通过质量门后生成 dist/ 或 release/ 下的 .bobplugin"
+      ]
+    }
+  ]
+}
