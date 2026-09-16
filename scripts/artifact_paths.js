@@ -8,11 +8,9 @@ const DEFAULT_OUTPUT_ROOT = path.join(DEFAULT_BUILD_ROOT, "output");
 const DEFAULT_DICT_DIR = path.join(DEFAULT_OUTPUT_ROOT, "dict");
 const DEFAULT_MANIFEST_PATH = path.join(DEFAULT_OUTPUT_ROOT, "manifest.json");
 const DEFAULT_ECDICT_DIR = path.join(DEFAULT_OUTPUT_ROOT, "ecdict");
-const DEFAULT_ROOTS_DIR = path.join(DEFAULT_OUTPUT_ROOT, "roots");
 const DEFAULT_DATA_PACK_ROOT = path.join(PROJECT_ROOT, "data", "packs");
 const DEFAULT_OALD_PACK_ROOT = path.join(DEFAULT_DATA_PACK_ROOT, "oald", "2024.09");
 const DEFAULT_ECDICT_PACK_ROOT = path.join(DEFAULT_DATA_PACK_ROOT, "ecdict", "latest");
-const DEFAULT_ROOTS_PACK_ROOT = path.join(DEFAULT_DATA_PACK_ROOT, "roots", "latest");
 
 function firstExistingPath(candidates, fallback) {
   return candidates.find((candidate) => fs.existsSync(candidate)) || fallback;
@@ -77,19 +75,6 @@ function resolveEcdictDir() {
   );
 }
 
-function resolveRootsDir() {
-  if (process.env.OALD_ROOTS_DIR) {
-    return path.resolve(process.env.OALD_ROOTS_DIR);
-  }
-  const externalPackDir = path.join(DEFAULT_ROOTS_PACK_ROOT, "words");
-  const generatedPackDir = path.join(resolveOutputRoot(), "packs", "roots", "latest", "words");
-  const legacyGeneratedDir = path.join(resolveOutputRoot(), "roots");
-  return firstExistingPath(
-    [externalPackDir, generatedPackDir, legacyGeneratedDir],
-    generatedPackDir,
-  );
-}
-
 module.exports = {
   PROJECT_ROOT,
   LEGACY_DICT_DIR,
@@ -98,15 +83,12 @@ module.exports = {
   DEFAULT_DICT_DIR,
   DEFAULT_MANIFEST_PATH,
   DEFAULT_ECDICT_DIR,
-  DEFAULT_ROOTS_DIR,
   DEFAULT_DATA_PACK_ROOT,
   DEFAULT_OALD_PACK_ROOT,
   DEFAULT_ECDICT_PACK_ROOT,
-  DEFAULT_ROOTS_PACK_ROOT,
   resolveBuildRoot,
   resolveOutputRoot,
   resolveDictDir,
   resolveManifestPath,
   resolveEcdictDir,
-  resolveRootsDir,
 };

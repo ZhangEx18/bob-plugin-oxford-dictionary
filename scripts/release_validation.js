@@ -130,10 +130,6 @@ function verifyReleaseArtifact(artifactPath, expectedVersion) {
   invariant(zip.getEntry("icon.png"), "release icon.png is missing");
 
   validateZipPack(zip, "packs/oald/2024.09", "oald", "dict");
-  validateZipPack(zip, "packs/roots/latest", "roots", "words");
-  if (zip.getEntry("packs/roots-csv/latest/manifest.json")) {
-    validateZipPack(zip, "packs/roots-csv/latest", "roots", "words");
-  }
 
   const trackShard = readZipJson(zip, "packs/oald/2024.09/dict/t.json");
   invariant(hasTrackDown(trackShard.track), "standalone track must contain track down");
