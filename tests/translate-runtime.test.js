@@ -91,28 +91,16 @@ test('track phrasal verb renders only on standalone track entry', async () => {
   }
 })
 
-test('roots pack remains packaged data and is not rendered in 8.4.2 results', async () => {
-  const result = await runTranslate('track', {
-    'packs/roots/latest/manifest.json': {
-      schemaVersion: '1.0.0',
-      dataVersion: 'latest',
-      packType: 'roots',
-      entryCount: 1,
-      shardCount: 1,
-      layout: { shardSubdir: 'words', shardExtension: '.json' },
-      files: [{ name: 't.json' }],
-    },
-    'packs/roots/latest/words/t.json': {
-      track: { rootBreakdown: 'ROOTS_SENTINEL', etymology: 'test-only roots payload' },
-    },
-  })
+test('OALD results carry no additions block', async () => {
+  const result = await runTranslate('track')
 
-  const rendered = JSON.stringify({
-    parts: result.toDict.parts,
-    additions: result.toDict.additions,
-    addtions: result.toDict.addtions,
-  })
-  assert.doesNotMatch(rendered, /ROOTS_SENTINEL|test-only roots payload/)
+  assert.deepEqual(
+    JSON.parse(JSON.stringify({
+      additions: result.toDict.additions,
+      addtions: result.toDict.addtions,
+    })),
+    { additions: [], addtions: [] },
+  )
 })
 
 test('every is retained as an OALD determiner entry', async () => {

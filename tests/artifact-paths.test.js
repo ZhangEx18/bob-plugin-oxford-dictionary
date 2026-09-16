@@ -11,7 +11,6 @@ const ENV_KEYS = [
   "OALD_DICT_DIR",
   "OALD_MANIFEST_PATH",
   "OALD_ECDICT_DIR",
-  "OALD_ROOTS_DIR",
 ];
 
 function withTemporaryOutput(run) {
@@ -39,14 +38,12 @@ test("explicit artifact paths override discovered pack paths", () => {
       OALD_DICT_DIR: path.join(outputRoot, "custom-dict"),
       OALD_MANIFEST_PATH: path.join(outputRoot, "custom-manifest.json"),
       OALD_ECDICT_DIR: path.join(outputRoot, "custom-ecdict"),
-      OALD_ROOTS_DIR: path.join(outputRoot, "custom-roots"),
     };
     Object.assign(process.env, overrides);
 
     assert.equal(artifactPaths.resolveDictDir(), overrides.OALD_DICT_DIR);
     assert.equal(artifactPaths.resolveManifestPath(), overrides.OALD_MANIFEST_PATH);
     assert.equal(artifactPaths.resolveEcdictDir(), overrides.OALD_ECDICT_DIR);
-    assert.equal(artifactPaths.resolveRootsDir(), overrides.OALD_ROOTS_DIR);
   });
 });
 
