@@ -176,5 +176,13 @@ export interface DataPackManifest {
   layout?: {
     shardSubdir?: string;
     shardExtension?: string;
+    /**
+     * How many leading characters of a word name its shard file.
+     *
+     * Absent means a legacy pack that shards by the raw first character; a
+     * declared value also switches on the encoded key form described in
+     * data-loader.ts.
+     */
+    shardKeyLength?: number;
   };
 }
