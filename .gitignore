@@ -7,8 +7,6 @@ dist/
 .omc/
 .omo/
 release/*.bobplugin
-!release/bob-plugin-oald-dictionary2.1.1.bobplugin
-!release/bob-plugin-oald-dictionary3.2.5.bobplugin
 dict/
 .cache/
 data/build/
