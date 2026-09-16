@@ -40,13 +40,12 @@ function resolveChildRelations(
 }
 
 /**
- * Whether the resolved entry actually carries anything to render.
+ * Whether the entry carries its own definition text.
  *
  * Alias entries are pure redirects, so an alias whose target could not be
- * loaded has no payload of its own. Reporting a miss lets the caller fall
- * through to ECDICT / Youdao rather than showing an empty dictionary card.
+ * loaded has no payload of its own.
  */
-function hasRenderableContent(entry: DictEntry): boolean {
+function hasOwnContent(entry: DictEntry): boolean {
   if (typeof entry.translation === "string" && entry.translation.trim() !== "") return true;
   return Array.isArray(entry.translation_parts) && entry.translation_parts.length > 0;
 }
@@ -58,7 +57,12 @@ export function buildEntryView(queryWord: string): EntryView | null {
   if (!shard || !exactEntry) return null;
 
   const { displayEntry, isFallbackDisplay } = resolveDisplayEntry(exactEntry);
-  if (!hasRenderableContent(displayEntry)) return null;
+  // Being empty is only a miss when nothing else can supply the text. Entries
+  // that expand into their origin sources render from those sources instead:
+  // inflections like "traveled" carry no content of their own yet display
+  // travel's 过去式 / 过去分词 blocks. Reporting a miss for those would send a
+  // query that used to resolve straight through to the network.
+  if (!shouldExpandOriginSources(exactEntry) && !hasOwnContent(displayEntry)) return null;
   return {
     queryWord: normalizedWord,
     displayWord: resolveTargetWord(exactEntry),
