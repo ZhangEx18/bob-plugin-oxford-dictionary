@@ -48,7 +48,7 @@ test("release gate accepts a complete OALD pack", () => {
 });
 
 test("release gate rejects a manifest for the wrong pack type", () => {
-  const pack = createOaldPack({ packType: "roots" });
+  const pack = createOaldPack({ packType: "ecdict" });
   try {
     assert.throws(() => validateSourcePack({
       manifestPath: pack.manifestPath,

@@ -2,8 +2,8 @@
 /**
  * Publish a built .bobplugin as a GitHub Release and record it in appcast.json.
  *
- * The release artifact cannot be produced in CI: it embeds the OALD/roots data
- * packs, which are private and absent from the repository. So this script takes
+ * The release artifact cannot be produced in CI: it embeds the OALD data
+ * pack, which is private and absent from the repository. So this script takes
  * an artifact that `npm run build:release` already produced, verifies it with the
  * same gate used by the build, records its hash in appcast.json, and publishes it.
  *
