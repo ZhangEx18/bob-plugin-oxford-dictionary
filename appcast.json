@@ -1,0 +1,12 @@
+{
+  "identifier": "com.oald.dictionary",
+  "versions": [
+    {
+      "version": "8.4.2",
+      "desc": "收口 npm workspace、现代 pack 路径与严格发布门禁；拆分 TypeScript 入口和 Python 流水线，保持 Bob 查词行为不变",
+      "sha256": "5a13fca83acfd98407d32339729c8a081b465ada850b813e3227959aa809d071",
+      "url": "https://github.com/ZhangEx18/bob-plugin-oxford-dictionary/releases/download/v8.4.2/bob-plugin-oald-dictionary8.4.2.bobplugin",
+      "minBobVersion": "1.0.0"
+    }
+  ]
+}
