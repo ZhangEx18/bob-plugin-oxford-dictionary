@@ -1,0 +1,31 @@
+name: Release Verification
+
+# appcast.json silently rots when a release is published but the recorded hash
+# is not refreshed. Bob refuses to install on a hash mismatch, so the drift only
+# reaches users. This job fails loudly instead.
+#
+# The release artifact itself cannot be built in CI: it embeds the private
+# OALD/roots data packs. Build and publish locally with:
+#   npm run build:release && npm run release:publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  verify-asset:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify published asset against appcast.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/verify_appcast_asset.mjs
